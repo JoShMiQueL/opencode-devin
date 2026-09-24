@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-devin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenCode v2 plugin: connect your Devin subscription to opencode with native /connect login and devin/* models",
   "type": "module",
   "main": "./dist/index.js",

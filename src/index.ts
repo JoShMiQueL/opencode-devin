@@ -24,12 +24,17 @@ import { fetchModels } from "./catalog.ts"
 export { createDevinProvider } from "./provider.ts"
 
 function openBrowser(url: string): void {
-  const cmd =
-    process.platform === "win32"
-      ? ["cmd", "/c", "start", "", url]
-      : process.platform === "darwin"
-        ? ["open", url]
-        : ["xdg-open", url]
+  if (process.platform === "win32") {
+    // `cmd /c start` truncates URLs at "&" (cmd metacharacter) when spawned
+    // from Bun — rundll32 hands the URL to the default browser verbatim.
+    Bun.spawn(["rundll32", "url.dll,FileProtocolHandler", url], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+    return
+  }
+  const cmd = process.platform === "darwin" ? ["open", url] : ["xdg-open", url]
   Bun.spawn(cmd, { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
 }
 
