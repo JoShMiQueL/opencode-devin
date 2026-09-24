@@ -19,7 +19,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
@@ -32,6 +32,16 @@
     "windsurf"
   ],
   "license": "MIT",
+  "author": {
+    "name": "JoShMiQueL",
+    "email": "joshmiquel.cs@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoShMiQueL/opencode-devin.git"
+  },
+  "homepage": "https://github.com/JoShMiQueL/opencode-devin#readme",
+  "bugs": "https://github.com/JoShMiQueL/opencode-devin/issues",
   "dependencies": {
     "@ai-sdk/provider": "3.0.8",
     "@opencode/plugin": "2.0.16"
