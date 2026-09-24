@@ -59,17 +59,25 @@ opencode run --model devin/swe-2-max "Refactor the auth module"
 
 ## How it works
 
-```
-/connect ──▶ app.devin.ai PKCE login ──▶ devin-session-token$<JWT>
-                    │                              │
-                    ▼                              ▼
-        stored as an OpenCode credential    GetCascadeModelConfigs (gRPC)
-                                                   │
-                                                   ▼
-                                    provider `devin`
-                                                   │
-                                                   ▼
-                              ai-sdk-devin ──▶ Cascade gRPC (GetUserJwt + GetChatMessage)
+```mermaid
+flowchart TD
+    subgraph Login["Login — /connect"]
+        A["/connect → Log in with Devin"] --> B["app.devin.ai/auth/cli/continue<br/>PKCE + S256, loopback callback on 127.0.0.1"]
+        B --> C["api.devin.ai/auth/cli/token"]
+        C --> D[("devin-session-token$JWT<br/>stored as an OpenCode credential")]
+    end
+
+    subgraph Catalog["Catalog — /models"]
+        D --> E["GetCascadeModelConfigs (gRPC)<br/>live per-account model list"]
+        E --> F["devin/* models"]
+    end
+
+    subgraph Chat["Chat — agent loop"]
+        D --> G["GetUserJwt → short-lived user_jwt"]
+        G --> H["GetChatMessage<br/>Cascade gRPC streaming"]
+    end
+
+    D -. "credential events → re-publish" .-> Catalog
 ```
 
 1. **Integration** — the plugin registers a `devin` integration with the Devin CLI login flow: PKCE (S256) against `app.devin.ai/auth/cli/continue`, a loopback callback on `127.0.0.1` (or manual code paste), and a token exchange at `api.devin.ai/auth/cli/token`.
