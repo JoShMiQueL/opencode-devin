@@ -1,25 +1,37 @@
 /**
  * OpenCode v2 plugin: Devin / Cognition.
  *
- * - Integration `devin` with two Windsurf OAuth methods so `/connect` stores
- *   the credential natively: an automated browser flow (loopback callback)
- *   and a manual token paste that works with an existing browser session.
- * - Provider `devin` publishing the per-account model catalog as `devin/*`
- *   models, streamed through the `ai-sdk-devin` provider package.
+ * - Integration `devin` with the Devin CLI login flow (PKCE, same as chisel)
+ *   so `/connect` stores the credential natively: automated browser flow and
+ *   a paste-code fallback for headless machines.
+ * - Provider `devin` backed by Devin's OpenAI-compatible inference gateway
+ *   (`server.codeium.com/api/v1`), with the live per-account catalog
+ *   published as `devin/*` models.
  *
  * The provider inventory re-publishes automatically whenever a credential is
  * connected, switched, or removed.
  */
 
 import { Plugin, Provider } from "@opencode/plugin"
-import { PROVIDER_ID } from "./constants.ts"
+import { DEFAULT_API_SERVER, PROVIDER_ID } from "./constants.ts"
 import { resolveCredentials, toStoredCredential } from "./credentials.ts"
-import { buildTokenUrl } from "./oauth/url.ts"
-import { prepareLogin } from "./oauth/loopback.ts"
-import { registerUser } from "./oauth/register.ts"
+import { startCallbackServer } from "./auth/loopback.ts"
+import { authorizeUrl } from "./auth/url.ts"
+import { challengeFor, generateState, generateVerifier } from "./auth/pkce.ts"
+import { exchangeCode } from "./auth/exchange.ts"
 import { fetchModels } from "./catalog.ts"
 
 export { createDevinProvider } from "./provider.ts"
+
+function openBrowser(url: string): void {
+  const cmd =
+    process.platform === "win32"
+      ? ["cmd", "/c", "start", "", url]
+      : process.platform === "darwin"
+        ? ["open", url]
+        : ["xdg-open", url]
+  Bun.spawn(cmd, { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+}
 
 export default Plugin.define({
   id: PROVIDER_ID,
@@ -27,7 +39,7 @@ export default Plugin.define({
     const publish = async () => {
       const credentials = await resolveCredentials(ctx)
       if (!credentials) return
-      const models = await fetchModels(credentials.apiKey)
+      const models = await fetchModels(credentials.apiKey, credentials.apiServerUrl)
       await ctx.provider.transform((editor) => {
         editor.add({
           info: {
@@ -40,7 +52,7 @@ export default Plugin.define({
             package: "aisdk:opencode-devin",
             settings: {
               apiKey: credentials.apiKey,
-              baseURL: credentials.apiServerUrl,
+              baseURL: credentials.apiServerUrl ?? DEFAULT_API_SERVER,
             },
           },
           models,
@@ -55,28 +67,43 @@ export default Plugin.define({
 
       editor.method.update({
         integrationID: PROVIDER_ID,
-        method: { id: "windsurf", type: "oauth", label: "Sign in with Windsurf (browser)" },
+        method: { id: "devin", type: "oauth", label: "Log in with Devin (browser)" },
         authorize: async () => {
-          const login = await prepareLogin()
+          const verifier = generateVerifier()
+          const state = generateState()
+          const server = await startCallbackServer(state)
+          const url = authorizeUrl({ state, challenge: await challengeFor(verifier), redirectUri: server.redirectUri })
+          openBrowser(url)
           return {
-            url: login.url,
-            instructions: login.instructions,
+            url,
+            instructions: `Log in to Devin in the opened browser tab. If it did not open, go to: ${url}`,
             mode: "auto" as const,
-            callback: login.awaitToken().then(toStoredCredential),
+            callback: (async () => {
+              try {
+                const code = await server.code
+                return toStoredCredential(await exchangeCode({ code, verifier }))
+              } finally {
+                server.close()
+              }
+            })(),
           }
         },
       })
 
       editor.method.update({
         integrationID: PROVIDER_ID,
-        method: { id: "token", type: "oauth", label: "Paste token from windsurf.com" },
-        authorize: async () => ({
-          url: buildTokenUrl(),
-          instructions:
-            "Open the URL and copy the token shown in the code block on the page (sign in first if asked), then paste it here.",
-          mode: "code" as const,
-          callback: async (code: string) => toStoredCredential(await registerUser(code)),
-        }),
+        method: { id: "code", type: "oauth", label: "Paste code (headless)" },
+        authorize: async () => {
+          const verifier = generateVerifier()
+          const state = generateState()
+          return {
+            url: authorizeUrl({ state, challenge: await challengeFor(verifier) }),
+            instructions:
+              "Open the URL, sign in to Devin, and copy the code shown on the page, then paste it here.",
+            mode: "code" as const,
+            callback: async (code: string) => toStoredCredential(await exchangeCode({ code: code.trim(), verifier })),
+          }
+        },
       })
 
       editor.method.update({
