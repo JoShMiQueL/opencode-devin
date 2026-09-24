@@ -74,7 +74,7 @@ opencode run --model devin/swe-2-max "Refactor the auth module"
 
 1. **Integration** — the plugin registers a `devin` integration with the Devin CLI login flow: PKCE (S256) against `app.devin.ai/auth/cli/continue`, a loopback callback on `127.0.0.1` (or manual code paste), and a token exchange at `api.devin.ai/auth/cli/token`.
 2. **Catalog** — model families come from Cognition's Cascade API for the logged-in account (the same source the Devin CLI uses). The OpenAI-compatible REST gateway (`/api/v1`) is not provisioned for most accounts, so chat streams through Cascade gRPC instead.
-3. **Provider** — the plugin publishes a `devin` provider whose package (`aisdk:opencode-devin`) is loaded by OpenCode's dynamic AI-SDK loader and wraps [`ai-sdk-devin`](https://www.npmjs.com/package/ai-sdk-devin): a short-lived `user_jwt` is minted per session (`GetUserJwt`) and chat streams through `GetChatMessage`.
+3. **Provider** — the plugin publishes a `devin` provider whose package (`aisdk:opencode-devin`) is loaded by OpenCode's dynamic AI-SDK loader. Its `LanguageModelV3` implementation lives in `src/protocol/`: a short-lived `user_jwt` is minted per session (`GetUserJwt`) and chat streams through `GetChatMessage`.
 4. **Reactivity** — the inventory re-publishes whenever a credential is connected, switched, or removed, so connecting mid-session updates `/models` without a restart.
 
 ## Troubleshooting
@@ -99,7 +99,7 @@ export { default } from "file:///absolute/path/to/opencode-devin/dist/index.js"
 
 ## Credits
 
-- The Cascade gRPC protocol client is **vendored** in `src/cascade/` (see `VENDORED.md`) — originally from [`ai-sdk-devin`](https://www.npmjs.com/package/ai-sdk-devin) by [karthiknish](https://github.com/karthiknish) and `pi-devin-auth` by nmzpy, both MIT. Vendoring keeps the credential path free of third-party runtime dependencies; the code is audited and owned here.
+- The Cascade protocol client is a **typed TypeScript port**, owned in `src/protocol/` (see `ATTRIBUTION.md`) — originally from [`ai-sdk-devin`](https://www.npmjs.com/package/ai-sdk-devin) by [karthiknish](https://github.com/karthiknish) and `pi-devin-auth` by nmzpy, both MIT. Owning the port keeps the credential path free of third-party runtime dependencies.
 - [`@cognitionai/opencode-devin`](https://www.npmjs.com/package/@cognitionai/opencode-devin) — reference for the Devin CLI PKCE login flow.
 
 ## License
