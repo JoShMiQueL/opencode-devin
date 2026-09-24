@@ -66,7 +66,7 @@ opencode run --model devin/swe-2-max "Refactor the auth module"
         stored as an OpenCode credential    GetCascadeModelConfigs (gRPC)
                                                    │
                                                    ▼
-                                    provider `devin` (aisdk:opencode-devin)
+                                    provider `devin`
                                                    │
                                                    ▼
                               ai-sdk-devin ──▶ Cascade gRPC (GetUserJwt + GetChatMessage)
@@ -74,7 +74,7 @@ opencode run --model devin/swe-2-max "Refactor the auth module"
 
 1. **Integration** — the plugin registers a `devin` integration with the Devin CLI login flow: PKCE (S256) against `app.devin.ai/auth/cli/continue`, a loopback callback on `127.0.0.1` (or manual code paste), and a token exchange at `api.devin.ai/auth/cli/token`.
 2. **Catalog** — model families come from Cognition's Cascade API for the logged-in account (the same source the Devin CLI uses). The OpenAI-compatible REST gateway (`/api/v1`) is not provisioned for most accounts, so chat streams through Cascade gRPC instead.
-3. **Provider** — the plugin publishes a `devin` provider whose package (`aisdk:opencode-devin`) is loaded by OpenCode's dynamic AI-SDK loader. Its `LanguageModelV3` implementation lives in `src/protocol/`: a short-lived `user_jwt` is minted per session (`GetUserJwt`) and chat streams through `GetChatMessage`.
+3. **Provider** — the plugin publishes a `devin` provider whose package specifier self-references the plugin's own installed location (`aisdk:<this-package>`), so OpenCode's dynamic AI-SDK loader imports it directly with no registry round-trip — both from a repo checkout during development and from the npm cache once installed. Its `LanguageModelV3` implementation lives in `src/protocol/`: a short-lived `user_jwt` is minted per session (`GetUserJwt`) and chat streams through `GetChatMessage`.
 4. **Reactivity** — the inventory re-publishes whenever a credential is connected, switched, or removed, so connecting mid-session updates `/models` without a restart.
 
 ## Troubleshooting

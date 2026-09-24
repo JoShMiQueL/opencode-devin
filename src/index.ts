@@ -4,16 +4,16 @@
  * - Integration `devin` with the Devin CLI login flow (PKCE, same as chisel)
  *   so `/connect` stores the credential natively: automated browser flow and
  *   a paste-code fallback for headless machines.
- * - Provider `devin` backed by Devin's OpenAI-compatible inference gateway
- *   (`server.codeium.com/api/v1`), with the live per-account catalog
- *   published as `devin/*` models.
+ * - Provider `devin` streaming chat through Cognition's Cascade protocol
+ *   (src/protocol/), with the live per-account catalog published as
+ *   `devin/*` models.
  *
  * The provider inventory re-publishes automatically whenever a credential is
  * connected, switched, or removed.
  */
 
 import { Plugin, Provider } from "@opencode/plugin"
-import { DEFAULT_API_SERVER, PROVIDER_ID } from "./constants.ts"
+import { DEFAULT_API_SERVER, LLM_ENV_VAR, PROVIDER_ID } from "./constants.ts"
 import { resolveCredentials, toStoredCredential } from "./credentials.ts"
 import { startCallbackServer } from "./auth/loopback.ts"
 import { authorizeUrl } from "./auth/url.ts"
@@ -47,9 +47,11 @@ export default Plugin.define({
             name: "Devin",
             activation: "enabled",
             // `aisdk:` routes through opencode's dynamic AI-SDK provider
-            // loader, which imports this package and calls its `create*`
-            // factory with the settings below.
-            package: "aisdk:opencode-devin",
+            // loader. The specifier self-references this package's own
+            // location: the repo checkout during development, or the plugin's
+            // npm cache copy once installed — either way the loader imports
+            // it directly, with no registry round-trip.
+            package: `aisdk:${new URL("..", import.meta.url).href}`,
             settings: {
               apiKey: credentials.apiKey,
               baseURL: credentials.apiServerUrl ?? DEFAULT_API_SERVER,
@@ -108,7 +110,7 @@ export default Plugin.define({
 
       editor.method.update({
         integrationID: PROVIDER_ID,
-        method: { type: "env", names: ["DEVIN_LLM_API_KEY"] },
+        method: { type: "env", names: [LLM_ENV_VAR] },
       })
     })
 

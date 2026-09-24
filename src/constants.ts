@@ -12,9 +12,6 @@ export const WEBAPP_URL = "https://app.devin.ai"
 /** Devin auth API — exchanges the PKCE code for a session token. */
 export const AUTH_API_URL = "https://api.devin.ai"
 
-/** OpenAI-compatible inference gateway (same api-server as the Devin CLI). */
-export const INFERENCE_URL = "https://server.codeium.com"
-
 /** Default Codeium API server (Cascade gRPC) when no tenant host is known. */
 export const DEFAULT_API_SERVER = "https://server.codeium.com"
 
@@ -29,7 +26,3 @@ export const CREDENTIAL_TTL_MS = 365 * 24 * 60 * 60 * 1000
 
 /** Fallback release date for catalog models that do not expose one (epoch ms). */
 export const DEFAULT_RELEASED_MS = Date.parse("2025-01-01T00:00:00Z")
-
-/** Catalog defaults when the gateway omits token limits. */
-export const DEFAULT_CONTEXT_TOKENS = 128_000
-export const DEFAULT_OUTPUT_TOKENS = 8_192
