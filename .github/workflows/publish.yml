@@ -23,5 +23,17 @@ jobs:
           npm run typecheck
           npm run build
 
+      - name: Check if version is already published
+        id: check
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm (trusted publishing)
+        if: steps.check.outputs.published != 'true'
         run: npm publish --provenance
