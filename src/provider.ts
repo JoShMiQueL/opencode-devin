@@ -11,7 +11,7 @@
  * moved from a plain string to `{ unified, raw? }`.
  */
 
-import { createDevin } from "ai-sdk-devin"
+import { createDevin } from "./cascade/index.js"
 import type { LanguageModelV3, LanguageModelV3StreamPart } from "@ai-sdk/provider"
 
 export interface DevinProviderSettings {

@@ -99,7 +99,7 @@ export { default } from "file:///absolute/path/to/opencode-devin/dist/index.js"
 
 ## Credits
 
-- [`ai-sdk-devin`](https://www.npmjs.com/package/ai-sdk-devin) by [karthiknish](https://github.com/karthiknish) — Cascade gRPC client and model catalog.
+- The Cascade gRPC protocol client is **vendored** in `src/cascade/` (see `VENDORED.md`) — originally from [`ai-sdk-devin`](https://www.npmjs.com/package/ai-sdk-devin) by [karthiknish](https://github.com/karthiknish) and `pi-devin-auth` by nmzpy, both MIT. Vendoring keeps the credential path free of third-party runtime dependencies; the code is audited and owned here.
 - [`@cognitionai/opencode-devin`](https://www.npmjs.com/package/@cognitionai/opencode-devin) — reference for the Devin CLI PKCE login flow.
 
 ## License

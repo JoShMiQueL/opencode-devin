@@ -8,7 +8,7 @@
  * provisioned for most accounts.
  */
 
-import { getCachedCatalog, type ModelCatalogEntry } from "ai-sdk-devin"
+import { getCachedCatalog, type ModelCatalogEntry } from "./cascade/catalog.js"
 import { Model, Provider } from "@opencode/plugin"
 import { DEFAULT_RELEASED_MS, PROVIDER_ID } from "./constants.ts"
 

@@ -6,6 +6,8 @@
     "lib": ["ES2022"],
     "types": ["bun"],
     "strict": true,
+    "allowJs": true,
+    "checkJs": false,
     "noUncheckedIndexedAccess": true,
     "rewriteRelativeImportExtensions": true,
     "declaration": true,
