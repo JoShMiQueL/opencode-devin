@@ -127,7 +127,11 @@ export default Plugin.define({
     void (async () => {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
         if (event.type === "credential.updated" || event.type === "credential.switched") {
-          await publish().catch(() => {})
+          // Not swallowed: a re-publish that fails leaves `/models` stale or
+          // empty, and that is otherwise indistinguishable from "no models".
+          await publish().catch((error) => {
+            console.error(`[opencode-devin] republish after ${event.type} failed:`, error)
+          })
         }
       }
     })()

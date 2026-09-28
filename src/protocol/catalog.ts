@@ -8,7 +8,8 @@
 
 import { encodeMessage, iterFields } from "./wire.ts"
 import { buildMetadata } from "./metadata.ts"
-import { getCachedUserJwt } from "./auth.ts"
+import { clearCachedUserJwt, credentialKey, getCachedUserJwt } from "./auth.ts"
+import { splitEffortSuffix } from "./effort.ts"
 import { DEFAULT_API_SERVER } from "../constants.ts"
 
 const CATALOG_TTL_MS = 10 * 60 * 1000
@@ -51,6 +52,37 @@ export interface Catalog {
   host: string
 }
 
+/**
+ * Raised when the account's catalog lists the model but marks it disabled.
+ *
+ * Only this case is safe to fail on: the catalog states it explicitly, so the
+ * upstream request would be rejected regardless. A model that is simply absent
+ * is *not* asserted on, because the catalog is not guaranteed to enumerate every
+ * uid Cascade accepts and a false rejection would break a working model.
+ */
+export class ModelNotAvailableError extends Error {
+  readonly modelUid: string
+  readonly label: string
+  constructor(modelUid: string, label: string) {
+    super(
+      label && label !== modelUid
+        ? `Model "${label}" (uid=${modelUid}) is not enabled for your Cognition account tier.`
+        : `Model uid "${modelUid}" is not enabled for your Cognition account tier.`,
+    )
+    this.name = "ModelNotAvailableError"
+    this.modelUid = modelUid
+    this.label = label
+  }
+}
+
+/** The catalog as the request path needs it: everything, and the usable subset. */
+export interface CatalogSnapshot {
+  /** Every model the account can see, including ones disabled for its tier. */
+  readonly entries: readonly ModelCatalogEntry[]
+  /** The subset currently usable; what the effort-variant lookup resolves against. */
+  readonly enabled: readonly ModelCatalogEntry[]
+}
+
 async function fetchCatalog(apiKey: string, host: string, signal?: AbortSignal): Promise<Catalog> {
   const userJwt = await getCachedUserJwt(apiKey, host, signal)
   const metadata = buildMetadata({
@@ -71,6 +103,9 @@ async function fetchCatalog(apiKey: string, host: string, signal?: AbortSignal):
 
   if (!response.ok) {
     const text = await response.text()
+    // A 401 means the cached user_jwt was rejected. Drop it so the next attempt
+    // mints a fresh one instead of replaying a token already known to be bad.
+    if (response.status === 401) clearCachedUserJwt()
     throw new Error(`GetCascadeModelConfigs HTTP ${response.status}: ${text.slice(0, 200)}`)
   }
 
@@ -139,10 +174,7 @@ function decodeModelConfig(buf: Buffer): ModelCatalogEntry | undefined {
   }
 
   if (modelUid.length === 0) return undefined
-  // Extract the effort level from the UID suffix
-  const effortMatch = modelUid.match(/-(none|low|medium|high|xhigh|max)$/)
-  const effortLevel = effortMatch?.[1]
-  const baseModelUid = effortLevel ? modelUid.slice(0, -effortLevel.length - 1) : undefined
+  const { baseModelUid, effortLevel } = splitEffortSuffix(modelUid)
   return {
     modelUid,
     label: label || modelUid,
@@ -159,7 +191,7 @@ let cached: Catalog | null = null
 let inFlight: Promise<Catalog> | null = null
 let inFlightKey: string | null = null
 
-const flightKey = (apiKey: string, host: string) => `${host}${apiKey}`
+const flightKey = (apiKey: string, host: string) => credentialKey(host, apiKey)
 
 /** Fetch the per-account catalog, cached for 10 minutes. Returns null on failure. */
 export async function getCachedCatalog(
@@ -195,25 +227,3 @@ export async function getCachedCatalog(
   }
 }
 
-export function clearCachedCatalog(): void {
-  cached = null
-  inFlight = null
-  inFlightKey = null
-}
-
-export class ModelNotAvailableError extends Error {
-  readonly modelUid: string
-  readonly label: string
-  readonly reason: "disabled" | "not_listed"
-  constructor(modelUid: string, label: string, reason: "disabled" | "not_listed") {
-    super(
-      reason === "disabled"
-        ? `Model "${label}" (uid=${modelUid}) is not enabled for your Cognition account tier.`
-        : `Model uid "${modelUid}" is not listed in the Cognition catalog for your account.`,
-    )
-    this.name = "ModelNotAvailableError"
-    this.modelUid = modelUid
-    this.label = label
-    this.reason = reason
-  }
-}
