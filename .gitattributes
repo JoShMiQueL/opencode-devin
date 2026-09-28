@@ -1,0 +1,4 @@
+# Normalize line endings so a checkout on any OS yields the same bytes and diffs
+# stay limited to real changes. `text=auto` makes git detect binaries on its own,
+# so there are no per-type rules to keep in sync.
+* text=auto eol=lf

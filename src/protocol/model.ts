@@ -20,44 +20,36 @@ import type {
   LanguageModelV3Usage,
 } from "@ai-sdk/provider"
 import { streamChatEvents, type ChatEvent, type ChatHistoryItem, type ChatToolDefinition } from "./chat.ts"
-import { getCachedCatalog, type Catalog, type ModelCatalogEntry } from "./catalog.ts"
+import {
+  getCachedCatalog,
+  ModelNotAvailableError,
+  type CatalogSnapshot,
+  type ModelCatalogEntry,
+} from "./catalog.ts"
+import { splitEffortSuffix, toEffortLevel, withEffortSuffix } from "./effort.ts"
 import { DEFAULT_API_SERVER } from "../constants.ts"
-
-/** Valid reasoning effort levels (encoded as UID suffixes in the catalog). */
-const EFFORT_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"] as const
-export type EffortLevel = (typeof EFFORT_LEVELS)[number]
 
 /**
  * Resolve the actual model UID to send upstream, applying an optional
  * reasoning-effort override from providerOptions: swap an existing effort
  * suffix, or append one when the catalog lists that variant.
+ *
+ * Exported for tests: this is what the catalog lookup exists for, so it needs
+ * to stay covered independently of the network.
  */
-function resolveEffortUid(
+export function resolveEffortUid(
   modelId: string,
   catalog: readonly ModelCatalogEntry[] | undefined,
   requestedEffort: unknown,
 ): string {
-  const effort = typeof requestedEffort === "string" ? requestedEffort.toLowerCase() : ""
-  if (!(EFFORT_LEVELS as readonly string[]).includes(effort)) return modelId
-  const effortMatch = modelId.match(/-(none|low|medium|high|xhigh|max)$/)
-  if (effortMatch?.[1]) return modelId.slice(0, -effortMatch[1].length - 1) + "-" + effort
+  const effort = toEffortLevel(requestedEffort)
+  if (!effort) return modelId
+  const split = splitEffortSuffix(modelId)
+  if (split.effortLevel) return withEffortSuffix(split.baseModelUid, effort)
   if (catalog?.some((entry) => entry.baseModelUid === modelId && entry.effortLevel === effort)) {
-    return modelId + "-" + effort
+    return withEffortSuffix(modelId, effort)
   }
   return modelId
-}
-
-/** Calculate the dollar cost of a request from token usage and model pricing. */
-export function calculateCost(
-  usage: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number },
-  pricing?: ModelCatalogEntry["pricing"],
-): number | undefined {
-  if (!pricing) return undefined
-  const input = ((usage.inputTokens ?? 0) / 1_000_000) * pricing.input
-  const cached = ((usage.cachedInputTokens ?? 0) / 1_000_000) * pricing.cachedInput
-  const output = ((usage.outputTokens ?? 0) / 1_000_000) * pricing.output
-  const total = input + cached + output
-  return total > 0 ? Math.round(total * 1_000_000) / 1_000_000 : 0
 }
 
 // --- Prompt conversion: LanguageModelV3Prompt → ChatHistoryItem[] ---
@@ -135,19 +127,21 @@ const DEFAULT_USAGE: LanguageModelV3Usage = {
   outputTokens: { total: 0, text: undefined, reasoning: undefined },
 }
 
-async function* convertStreamEvents(
+/** Sentinel distinguishing a timer wake-up from an upstream event. */
+const TICK = Symbol("coalesce-tick")
+
+/**
+ * Exported for tests: the Cascade event -> AI SDK stream translation is pure,
+ * and interleaved parallel tool calls are the case most likely to regress.
+ */
+export async function* convertStreamEvents(
   events: AsyncGenerator<ChatEvent>,
   generateId: () => string,
-  pricing?: ModelCatalogEntry["pricing"],
 ): AsyncGenerator<LanguageModelV3StreamPart> {
   let textId = ""
   let reasoningId = ""
   let textOpen = false
   let reasoningOpen = false
-  let currentToolId = ""
-  let currentToolName = ""
-  let toolInputOpen = false
-  let pendingToolArgs = ""
   let finishReason = "stop"
   let usage: LanguageModelV3Usage | undefined
 
@@ -156,91 +150,134 @@ async function* convertStreamEvents(
   let reasoningBuf = ""
   let reasoningLastFlush = 0
 
-  yield { type: "stream-start", warnings: [] }
+  // Cascade interleaves argument deltas across parallel tool calls, so pending
+  // arguments are buffered per call id. A single shared buffer would splice two
+  // calls' JSON into one unparsable string.
+  const openTools = new Map<string, { name: string; args: string }>()
+  // Deltas that carry no id belong to the most recently opened call.
+  let lastToolId = ""
 
-  for await (const event of events) {
+  const pendingDeltas = (): LanguageModelV3StreamPart[] => {
+    const parts: LanguageModelV3StreamPart[] = []
+    if (textBuf) {
+      parts.push({ type: "text-delta", id: textId, delta: textBuf })
+      textBuf = ""
+    }
+    if (reasoningBuf) {
+      parts.push({ type: "reasoning-delta", id: reasoningId, delta: reasoningBuf })
+      reasoningBuf = ""
+    }
+    return parts
+  }
+
+  const closeBlocks = (): LanguageModelV3StreamPart[] => {
+    const parts: LanguageModelV3StreamPart[] = []
+    if (textOpen) {
+      parts.push({ type: "text-end", id: textId })
+      textOpen = false
+    }
+    if (reasoningOpen) {
+      parts.push({ type: "reasoning-end", id: reasoningId })
+      reasoningOpen = false
+    }
+    return parts
+  }
+
+  // The protocol has no end-of-tool-call marker, so a call cannot be completed
+  // until the stream ends. They are emitted in the order they were started.
+  const completedToolCalls = (): LanguageModelV3StreamPart[] => {
+    const parts: LanguageModelV3StreamPart[] = []
+    for (const [id, tool] of openTools) {
+      parts.push({ type: "tool-call", toolCallId: id, toolName: tool.name, input: tool.args })
+    }
+    openTools.clear()
+    return parts
+  }
+
+  /** Flush only the buffers that have been waiting longer than the interval. */
+  const staleDeltas = (): LanguageModelV3StreamPart[] => {
+    const now = Date.now()
+    const parts: LanguageModelV3StreamPart[] = []
+    if (textBuf && now - textLastFlush >= COALESCE_INTERVAL_MS) {
+      parts.push({ type: "text-delta", id: textId, delta: textBuf })
+      textBuf = ""
+      textLastFlush = now
+    }
+    if (reasoningBuf && now - reasoningLastFlush >= COALESCE_INTERVAL_MS) {
+      parts.push({ type: "reasoning-delta", id: reasoningId, delta: reasoningBuf })
+      reasoningBuf = ""
+      reasoningLastFlush = now
+    }
+    return parts
+  }
+
+  const handleEvent = (event: ChatEvent): LanguageModelV3StreamPart[] => {
+    const parts: LanguageModelV3StreamPart[] = []
     switch (event.kind) {
       case "text": {
+        // Flush the other block before opening this one, so the parts stay in
+        // causal order. Without this, text buffered right before the model
+        // starts thinking would stay invisible until more text, a tool call, or
+        // the end of the stream.
+        if (reasoningOpen && reasoningBuf) {
+          parts.push({ type: "reasoning-delta", id: reasoningId, delta: reasoningBuf })
+          reasoningBuf = ""
+          reasoningLastFlush = Date.now()
+        }
         if (!textOpen) {
           textId = generateId()
           textOpen = true
           textLastFlush = Date.now()
-          yield { type: "text-start", id: textId }
+          parts.push({ type: "text-start", id: textId })
         }
         textBuf += event.text
         if (textBuf.length >= COALESCE_MAX_BYTES || Date.now() - textLastFlush >= COALESCE_INTERVAL_MS) {
-          yield { type: "text-delta", id: textId, delta: textBuf }
+          parts.push({ type: "text-delta", id: textId, delta: textBuf })
           textBuf = ""
           textLastFlush = Date.now()
         }
         break
       }
       case "reasoning": {
+        if (textOpen && textBuf) {
+          parts.push({ type: "text-delta", id: textId, delta: textBuf })
+          textBuf = ""
+          textLastFlush = Date.now()
+        }
         if (!reasoningOpen) {
           reasoningId = generateId()
           reasoningOpen = true
           reasoningLastFlush = Date.now()
-          yield { type: "reasoning-start", id: reasoningId }
+          parts.push({ type: "reasoning-start", id: reasoningId })
         }
         reasoningBuf += event.text
         if (reasoningBuf.length >= COALESCE_MAX_BYTES || Date.now() - reasoningLastFlush >= COALESCE_INTERVAL_MS) {
-          yield { type: "reasoning-delta", id: reasoningId, delta: reasoningBuf }
+          parts.push({ type: "reasoning-delta", id: reasoningId, delta: reasoningBuf })
           reasoningBuf = ""
           reasoningLastFlush = Date.now()
         }
         break
       }
       case "tool_call_start": {
-        if (textBuf) {
-          yield { type: "text-delta", id: textId, delta: textBuf }
-          textBuf = ""
-        }
-        if (reasoningBuf) {
-          yield { type: "reasoning-delta", id: reasoningId, delta: reasoningBuf }
-          reasoningBuf = ""
-        }
-        if (textOpen) {
-          yield { type: "text-end", id: textId }
-          textOpen = false
-        }
-        if (reasoningOpen) {
-          yield { type: "reasoning-end", id: reasoningId }
-          reasoningOpen = false
-        }
-        if (toolInputOpen) {
-          yield { type: "tool-call", toolCallId: currentToolId, toolName: currentToolName, input: pendingToolArgs }
-        }
-        currentToolId = event.id || generateId()
-        currentToolName = event.name
-        toolInputOpen = true
-        pendingToolArgs = ""
+        parts.push(...pendingDeltas())
+        parts.push(...closeBlocks())
+        const id = event.id || generateId()
+        const open = openTools.get(id)
+        if (open) open.name = event.name
+        else openTools.set(id, { name: event.name, args: "" })
+        lastToolId = id
         break
       }
       case "tool_call_args": {
-        pendingToolArgs += event.argsDelta
+        const open = openTools.get(event.id ?? lastToolId)
+        // An orphan delta has no call to attach to; dropping it beats inventing
+        // a nameless tool call.
+        if (open) open.args += event.argsDelta
         break
       }
       case "finish": {
-        if (textBuf) {
-          yield { type: "text-delta", id: textId, delta: textBuf }
-          textBuf = ""
-        }
-        if (reasoningBuf) {
-          yield { type: "reasoning-delta", id: reasoningId, delta: reasoningBuf }
-          reasoningBuf = ""
-        }
-        if (textOpen) {
-          yield { type: "text-end", id: textId }
-          textOpen = false
-        }
-        if (reasoningOpen) {
-          yield { type: "reasoning-end", id: reasoningId }
-          reasoningOpen = false
-        }
-        if (toolInputOpen) {
-          yield { type: "tool-call", toolCallId: currentToolId, toolName: currentToolName, input: pendingToolArgs }
-          toolInputOpen = false
-        }
+        parts.push(...pendingDeltas())
+        parts.push(...closeBlocks())
         finishReason = event.reason
         break
       }
@@ -267,30 +304,67 @@ async function* convertStreamEvents(
         break
       }
     }
+    return parts
+  }
+
+  // The loop is woken by a timer as well as by upstream events, so text that
+  // arrives and is then followed by silence is still delivered promptly instead
+  // of waiting for the next event or the end of the stream.
+  //
+  // A single `next()` is kept in flight across iterations: when the timer wins
+  // the race the pending read is handed to the next iteration rather than
+  // dropped, which is what keeps this from losing events.
+  const upstream = events[Symbol.asyncIterator]()
+  let inFlight: Promise<IteratorResult<ChatEvent>> | null = null
+  const nextEvent = () => (inFlight ??= upstream.next())
+  let wake: (() => void) | undefined
+  const ticker = setInterval(() => wake?.(), COALESCE_INTERVAL_MS)
+  const tick = () =>
+    new Promise<typeof TICK>((resolve) => {
+      wake = () => {
+        wake = undefined
+        resolve(TICK)
+      }
+    })
+  // With nothing buffered there is nothing to flush, so the timer race — and its
+  // allocation — is skipped entirely for the common fast-streaming path.
+  const nextStep = (): Promise<IteratorResult<ChatEvent> | typeof TICK> =>
+    textBuf || reasoningBuf ? Promise.race([nextEvent(), tick()]) : nextEvent()
+
+  yield { type: "stream-start", warnings: [] }
+
+  try {
+    for (;;) {
+      const step = await nextStep()
+      if (step === TICK) {
+        // The upstream read is still in flight; keep it for the next iteration.
+        yield* staleDeltas()
+        continue
+      }
+      // Consume the read. Without clearing it here, the same settled promise
+      // would be handed back on the next iteration and the same event replayed
+      // forever.
+      inFlight = null
+      if (step.done) break
+      yield* handleEvent(step.value)
+    }
+  } finally {
+    clearInterval(ticker)
+    inFlight = null
+    // Let the upstream generator finish so its own cleanup runs.
+    void upstream.return?.(undefined)
   }
 
   // Final flush
-  if (textBuf) yield { type: "text-delta", id: textId, delta: textBuf }
-  if (reasoningBuf) yield { type: "reasoning-delta", id: reasoningId, delta: reasoningBuf }
-  if (textOpen) yield { type: "text-end", id: textId }
-  if (reasoningOpen) yield { type: "reasoning-end", id: reasoningId }
-  if (toolInputOpen) {
-    yield { type: "tool-call", toolCallId: currentToolId, toolName: currentToolName, input: pendingToolArgs }
-  }
+  yield* pendingDeltas()
+  yield* closeBlocks()
+  yield* completedToolCalls()
 
-  const inputTotal = usage?.inputTokens?.total
-  const cachedRead = usage?.inputTokens?.cacheRead
-  const outputTotal = usage?.outputTokens?.total
-  const cost = calculateCost(
-    { inputTokens: inputTotal, cachedInputTokens: cachedRead, outputTokens: outputTotal },
-    pricing,
-  )
   const rawReason = FINISH_REASON_MAP[finishReason] ?? "stop"
   yield {
     type: "finish",
     finishReason: { unified: rawReason, raw: finishReason },
     usage: usage ?? DEFAULT_USAGE,
-    ...(cost !== undefined ? { providerMetadata: { devin: { cost } } } : {}),
   } as LanguageModelV3StreamPart
 }
 
@@ -304,9 +378,20 @@ interface CollectedResult {
   usage?: LanguageModelV3Usage
 }
 
-async function collectEvents(events: AsyncGenerator<ChatEvent>): Promise<CollectedResult> {
+/** Exported for tests; mirrors `convertStreamEvents` for the non-streaming path. */
+export async function collectEvents(events: AsyncGenerator<ChatEvent>): Promise<CollectedResult> {
   const result: CollectedResult = { text: "", reasoning: "", toolCalls: [], finishReason: "stop" }
-  let currentTool: { id: string; name: string; args: string } | null = null
+  // Keyed by call id for the same reason as the streaming path: parallel tool
+  // calls interleave their argument deltas.
+  const openTools = new Map<string, { id: string; name: string; args: string }>()
+  let lastToolId = ""
+  let anonymous = 0
+
+  const commit = () => {
+    for (const tool of openTools.values()) result.toolCalls.push(tool)
+    openTools.clear()
+  }
+
   for await (const event of events) {
     switch (event.kind) {
       case "text":
@@ -315,18 +400,22 @@ async function collectEvents(events: AsyncGenerator<ChatEvent>): Promise<Collect
       case "reasoning":
         result.reasoning += event.text
         break
-      case "tool_call_start":
-        if (currentTool) result.toolCalls.push(currentTool)
-        currentTool = { id: event.id, name: event.name, args: "" }
+      case "tool_call_start": {
+        // A start without an id still needs its own buffer, otherwise two
+        // anonymous calls would share one.
+        const id = event.id ?? `__anonymous_${anonymous++}`
+        const open = openTools.get(id)
+        if (open) open.name = event.name
+        else openTools.set(id, { id: event.id ?? id, name: event.name, args: "" })
+        lastToolId = id
         break
-      case "tool_call_args":
-        if (currentTool) currentTool.args += event.argsDelta
+      }
+      case "tool_call_args": {
+        const open = openTools.get(event.id ?? lastToolId)
+        if (open) open.args += event.argsDelta
         break
+      }
       case "finish":
-        if (currentTool) {
-          result.toolCalls.push(currentTool)
-          currentTool = null
-        }
         result.finishReason = event.reason
         break
       case "usage":
@@ -342,7 +431,7 @@ async function collectEvents(events: AsyncGenerator<ChatEvent>): Promise<Collect
         break
     }
   }
-  if (currentTool) result.toolCalls.push(currentTool)
+  commit()
   return result
 }
 
@@ -350,18 +439,71 @@ interface LanguageModelOptions {
   modelId: string
   apiKey: string
   apiServerUrl?: string
-  catalog?: readonly ModelCatalogEntry[]
-  catalogMap?: Map<string, ModelCatalogEntry>
+  /**
+   * Resolves the per-account catalog on demand. The reasoning-effort override
+   * needs it to tell "this variant exists" from "this model has no such
+   * variant", so the UID cannot be resolved without it.
+   */
+  loadCatalog: () => Promise<CatalogSnapshot | undefined>
+}
+
+/**
+ * Refuse a request the catalog says cannot succeed, and warn about one it cannot
+ * vouch for.
+ *
+ * Disabled is a hard stop because the account cannot use it. Absent is only a
+ * warning: the catalog is not a contract that it enumerates every uid Cascade
+ * accepts, so the upstream response stays the authority.
+ */
+function checkModelUsable(modelId: string, catalog: CatalogSnapshot | undefined): void {
+  if (!catalog) return
+  const entry = catalog.entries.find((candidate) => candidate.modelUid === modelId)
+  if (!entry) {
+    console.warn(
+      `[opencode-devin] model "${modelId}" is not in the Cascade catalog for this account; sending the request anyway`,
+    )
+    return
+  }
+  if (entry.disabled) throw new ModelNotAvailableError(modelId, entry.label)
+}
+
+/**
+ * Whether the catalog vouches for this model.
+ *
+ * `true` when the account's catalog lists it, `false` when the catalog loaded
+ * and does not mention it, `undefined` when no catalog was available at all.
+ */
+function isKnownToCatalog(modelId: string, catalog: CatalogSnapshot | undefined): boolean | undefined {
+  if (!catalog) return undefined
+  return catalog.entries.some((entry) => entry.modelUid === modelId)
+}
+
+/**
+ * Add the likely cause to a failure for a model the catalog never listed.
+ *
+ * Refusing such a model up front would be wrong: the catalog is not a contract
+ * that it enumerates every uid Cascade accepts, so a false rejection would break
+ * a model that does work. Instead the request is allowed to fail the way
+ * upstream makes it fail, and the probable reason is attached to that error —
+ * otherwise the user has to correlate a log warning with an HTTP failure.
+ */
+function hintUnlistedModel(cause: unknown, modelId: string, known: boolean | undefined): unknown {
+  if (known !== false || !(cause instanceof Error)) return cause
+  cause.message +=
+    ` — model "${modelId}" is not listed in your Cognition catalog, which is the most likely reason.` +
+    ` If it should be available, run /connect to refresh the catalog, or pick a model from /models.`
+  return cause
 }
 
 function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
-  const run = (callOptions: LanguageModelV3CallOptions) => {
+  const run = async (callOptions: LanguageModelV3CallOptions, signal: AbortSignal | undefined) => {
+    const catalog = await options.loadCatalog()
+    checkModelUsable(options.modelId, catalog)
     const effortOverride = callOptions.providerOptions?.devin?.reasoningEffort
-    const resolvedModelId = resolveEffortUid(options.modelId, options.catalog, effortOverride)
-    const pricing = options.catalogMap?.get(resolvedModelId)?.pricing
+    const resolvedModelId = resolveEffortUid(options.modelId, catalog?.enabled, effortOverride)
     return {
       resolvedModelId,
-      pricing,
+      knownToCatalog: isKnownToCatalog(options.modelId, catalog),
       events: streamChatEvents({
         apiKey: options.apiKey,
         apiServerUrl: options.apiServerUrl,
@@ -374,7 +516,7 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
           topP: callOptions.topP,
           topK: callOptions.topK,
         },
-        signal: callOptions.abortSignal,
+        signal,
       }),
     }
   }
@@ -385,22 +527,16 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
     modelId: options.modelId,
     supportedUrls: {},
     async doGenerate(callOptions): Promise<LanguageModelV3GenerateResult> {
-      const { pricing, events } = run(callOptions)
-      const collected = await collectEvents(events)
+      const { events, knownToCatalog } = await run(callOptions, callOptions.abortSignal)
+      const collected = await collectEvents(events).catch((cause: unknown) => {
+        throw hintUnlistedModel(cause, options.modelId, knownToCatalog)
+      })
       const content: LanguageModelV3GenerateResult["content"] = []
       if (collected.reasoning) content.push({ type: "reasoning", text: collected.reasoning })
       if (collected.text) content.push({ type: "text", text: collected.text })
       for (const call of collected.toolCalls) {
         content.push({ type: "tool-call", toolCallId: call.id, toolName: call.name, input: call.args })
       }
-      const cost = calculateCost(
-        {
-          inputTokens: collected.usage?.inputTokens?.total,
-          cachedInputTokens: collected.usage?.inputTokens?.cacheRead,
-          outputTokens: collected.usage?.outputTokens?.total,
-        },
-        pricing,
-      )
       return {
         content,
         finishReason: {
@@ -409,23 +545,39 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
         },
         usage: collected.usage ?? DEFAULT_USAGE,
         warnings: [],
-        ...(cost !== undefined ? { providerMetadata: { devin: { cost } } } : {}),
       }
     },
     async doStream(callOptions) {
-      const { pricing, events } = run(callOptions)
+      // Owned so that cancelling the stream can tear the request down; the
+      // caller's signal is honoured alongside it.
+      const abort = new AbortController()
+      const signal = callOptions.abortSignal
+        ? AbortSignal.any([callOptions.abortSignal, abort.signal])
+        : abort.signal
+      const { events, knownToCatalog } = await run(callOptions, signal)
       const generateId = () => crypto.randomUUID()
-      const generator = convertStreamEvents(events, generateId, pricing)
+      const generator = convertStreamEvents(events, generateId)
+      const modelId = options.modelId
+      let cancelled = false
       const stream = new ReadableStream<LanguageModelV3StreamPart>({
         async start(controller) {
           try {
             for await (const chunk of generator) {
+              if (cancelled) break
               controller.enqueue(chunk)
             }
-            controller.close()
+            if (!cancelled) controller.close()
           } catch (cause) {
-            controller.error(cause)
+            if (!cancelled) controller.error(hintUnlistedModel(cause, modelId, knownToCatalog))
           }
+        },
+        async cancel() {
+          cancelled = true
+          // Aborting is what actually releases the connection. `generator.return()`
+          // alone is not enough: it is queued behind the in-flight read, so the
+          // request would stay open until the idle timeout fired.
+          abort.abort(new Error("Stream cancelled by the consumer"))
+          await generator.return(undefined).catch(() => {})
         },
       })
       return { stream }
@@ -440,14 +592,38 @@ export interface DevinProviderOptions {
 
 export interface DevinProvider {
   languageModel(modelId: string): LanguageModelV3
-  /** Fetch the live model catalog for this account. Returns all enabled models. */
-  models(): Promise<ModelCatalogEntry[]>
 }
 
 export function createDevin(options: DevinProviderOptions): DevinProvider {
   const apiKey = options.apiKey ?? ""
-  let cachedModels: ModelCatalogEntry[] | undefined
-  let catalogMap: Map<string, ModelCatalogEntry> | undefined
+  let catalog: CatalogSnapshot | undefined
+  let pending: Promise<CatalogSnapshot | undefined> | undefined
+
+  /**
+   * Per-account catalog, memoized for the life of the provider.
+   *
+   * `getCachedCatalog` already dedupes concurrent fetches and caches the result
+   * for 10 minutes, so this is normally a cache hit — the plugin's `publish()`
+   * warms the same module-level cache before any chat happens. On failure it
+   * resolves `undefined`, and the request proceeds uncatalogued rather than being
+   * rejected on a guess.
+   */
+  const loadCatalog = (): Promise<CatalogSnapshot | undefined> => {
+    if (!apiKey) return Promise.resolve(undefined)
+    if (catalog) return Promise.resolve(catalog)
+    pending ??= getCachedCatalog(apiKey, options.baseURL)
+      .then((result) => {
+        if (result) {
+          const entries = Array.from(result.byUid.values())
+          catalog = { entries, enabled: entries.filter((entry) => !entry.disabled) }
+        }
+        return catalog
+      })
+      .finally(() => {
+        pending = undefined
+      })
+    return pending
+  }
 
   return {
     languageModel(modelId: string): LanguageModelV3 {
@@ -455,18 +631,8 @@ export function createDevin(options: DevinProviderOptions): DevinProvider {
         modelId,
         apiKey,
         apiServerUrl: options.baseURL,
-        catalog: cachedModels,
-        catalogMap,
+        loadCatalog,
       })
-    },
-    async models(): Promise<ModelCatalogEntry[]> {
-      if (!apiKey) return []
-      const catalog: Catalog | null = await getCachedCatalog(apiKey, options.baseURL)
-      if (!catalog) return []
-      const models = Array.from(catalog.byUid.values()).filter((entry) => !entry.disabled)
-      cachedModels = models
-      catalogMap = new Map(models.map((entry) => [entry.modelUid, entry]))
-      return models
     },
   }
 }

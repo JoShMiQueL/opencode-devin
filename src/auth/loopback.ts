@@ -15,8 +15,20 @@ export interface CallbackServer {
   close: () => void
 }
 
+/**
+ * How long the loopback listener stays armed waiting for the browser redirect.
+ *
+ * The integration method registration has no cancellation hook, so an
+ * abandoned sign-in (tab closed, user picked the paste-code method instead)
+ * would otherwise leave the port bound and the HTTP server running for the
+ * life of the process. This timer is the only place that can be cleaned up
+ * from, so it is the backstop. Long enough for a real interactive login
+ * including any second factor.
+ */
+const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000
+
 /** Bind a one-shot HTTP server and wait for the authorization code. */
-export function startCallbackServer(state: string): Promise<CallbackServer> {
+export function startCallbackServer(state: string, timeoutMs = CALLBACK_TIMEOUT_MS): Promise<CallbackServer> {
   return new Promise((resolve, reject) => {
     let settle: ((code: string) => void) | undefined
     let fail: ((error: Error) => void) | undefined
@@ -24,6 +36,19 @@ export function startCallbackServer(state: string): Promise<CallbackServer> {
       settle = res
       fail = rej
     })
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let stopped = false
+    const clearTimer = () => {
+      if (timer) clearTimeout(timer)
+      timer = undefined
+    }
+    const stop = () => {
+      if (stopped) return
+      stopped = true
+      clearTimer()
+      server.stop(true)
+    }
 
     let server: Bun.Server<unknown>
     try {
@@ -50,6 +75,10 @@ export function startCallbackServer(state: string): Promise<CallbackServer> {
             return page("No authorization code received", "Please return to the terminal and try again.", 400)
           }
           settle?.(received)
+          // Stopping here would kill the listener before this response is
+          // delivered, so the success page would never reach the browser.
+          // The caller closes the server once the code is exchanged.
+          clearTimer()
           return page("Signed in to Devin", "You can close this tab and return to opencode.")
         },
       })
@@ -58,13 +87,21 @@ export function startCallbackServer(state: string): Promise<CallbackServer> {
       return
     }
 
+    // Armed before the caller can learn the redirect URI, so there is no
+    // window in which a completed redirect would leave the timer running.
+    timer = setTimeout(() => {
+      const label = timeoutMs >= 1000 ? `${Math.round(timeoutMs / 1000)}s` : `${timeoutMs}ms`
+      fail?.(new Error(`Login timed out after ${label}`))
+      stop()
+    }, timeoutMs)
+
     resolve({
       // The server is listening at this point, so the port is always set.
       redirectUri: `http://127.0.0.1:${server.port!}${CALLBACK_PATH}`,
       code,
       close: () => {
         fail?.(new Error("Login cancelled"))
-        server.stop(true)
+        stop()
       },
     })
   })

@@ -1,6 +1,10 @@
 /**
  * `GetUserJwt` — mints the short-lived `user_jwt` required by catalog and chat
- * RPCs (~24 min TTL). The long-lived session token alone is not accepted.
+ * RPCs. The long-lived session token alone is not accepted.
+ *
+ * The real lifetime comes from the token's own `exp` claim; the cache only
+ * trusts it, and falls back to {@link FALLBACK_JWT_TTL_SECONDS} when `exp` is
+ * missing or unparseable. Observed tokens run roughly 24 minutes.
  *
  * Originally ported from pi-devin-auth (MIT, Copyright (c) 2026 nmzpy).
  */
@@ -10,6 +14,13 @@ import { buildMetadata } from "./metadata.ts"
 import { DEFAULT_API_SERVER } from "../constants.ts"
 
 const MINT_TIMEOUT_MS = 30_000
+
+/**
+ * Assumed lifetime when the token carries no readable `exp`. Deliberately
+ * shorter than the observed ~24 minutes: a too-short assumption costs one extra
+ * mint, a too-long one keeps sending a token the server will reject.
+ */
+const FALLBACK_JWT_TTL_SECONDS = 600
 
 export class CloudAuthError extends Error {
   readonly status: number
@@ -61,7 +72,7 @@ export async function mintUserJwt(apiKey: string, host = DEFAULT_API_SERVER, sig
     throw new CloudAuthError(`GetUserJwt 200 but no field-1 JWT found (${buf.length} bytes)`, response.status)
   }
 
-  let expiresAt = Math.floor(Date.now() / 1000) + 600
+  let expiresAt = Math.floor(Date.now() / 1000) + FALLBACK_JWT_TTL_SECONDS
   try {
     const parts = jwt.split(".")
     const pad = (s: string) => s + "=".repeat((4 - (s.length % 4)) % 4)
@@ -70,10 +81,24 @@ export async function mintUserJwt(apiKey: string, host = DEFAULT_API_SERVER, sig
     }
     if (typeof payload.exp === "number") expiresAt = payload.exp
   } catch {
-    // non-JWT payload — keep the 10-minute fallback
+    // non-JWT payload — keep the conservative fallback
   }
   return { jwt, expiresAt }
 }
+
+/**
+ * Separator for composite cache keys.
+ *
+ * 0x1F (unit separator) cannot appear in a host or a token, so keys built from
+ * them are unambiguous. It is spelled as an escape rather than a literal control
+ * byte so it stays visible in diffs and review: silently dropped by a re-encode,
+ * `host="a" key="bc"` would collide with `host="ab" key="c"` and two different
+ * credentials would share a cached session.
+ */
+const KEY_SEPARATOR = "\x1f"
+
+/** Cache key for one credential against one host. */
+export const credentialKey = (host: string, apiKey: string): string => `${host}${KEY_SEPARATOR}${apiKey}`
 
 let cache: (UserJwt & { apiKey: string; host: string }) | null = null
 const inFlight = new Map<string, Promise<UserJwt>>()
@@ -85,7 +110,7 @@ export async function getCachedUserJwt(apiKey: string, host = DEFAULT_API_SERVER
   if (cache && cache.apiKey === apiKey && cache.host === host && cache.expiresAt > now + 60) {
     return cache.jwt
   }
-  const key = `${host}${apiKey}`
+  const key = credentialKey(host, apiKey)
   const pending = inFlight.get(key)
   if (pending) return (await pending).jwt
 

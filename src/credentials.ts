@@ -41,7 +41,11 @@ async function fromStoredConnection(ctx: PluginContext): Promise<DevinCredential
       name: typeof metadata?.name === "string" ? metadata.name : "opencode",
       apiServerUrl: typeof metadata?.apiServerUrl === "string" ? metadata.apiServerUrl : undefined,
     }
-  } catch {
+  } catch (error) {
+    // An absent connection is normal and returns above without logging. An
+    // exception here is not: the visible symptom is "no devin models", so the
+    // reason has to reach the log somewhere.
+    console.warn("[opencode-devin] could not resolve the stored credential:", error)
     return undefined
   }
 }

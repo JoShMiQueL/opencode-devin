@@ -14,7 +14,7 @@ import {
   iterFields,
 } from "./wire.ts"
 import { buildMetadata } from "./metadata.ts"
-import { getCachedUserJwt } from "./auth.ts"
+import { clearCachedUserJwt, credentialKey, getCachedUserJwt } from "./auth.ts"
 import { DEFAULT_API_SERVER } from "../constants.ts"
 
 const STREAM_IDLE_MS = 120_000
@@ -215,13 +215,26 @@ interface SessionIds {
   cascadeId: string
 }
 
+/**
+ * Per-credential Cascade session ids.
+ *
+ * Keys embed the session token, so the map is capped and evicted in insertion
+ * order: a user who connects and switches credentials repeatedly would
+ * otherwise accumulate tokens in memory for the life of the process. In
+ * practice only one or two credentials are ever live at a time.
+ */
+const SESSION_CACHE_LIMIT = 4
 const sessionCache = new Map<string, SessionIds>()
 
 function getOrAllocateSessionIds(apiKey: string, host: string, cascadeIdOverride?: string): SessionIds {
-  const key = `${host}${apiKey}`
+  const key = credentialKey(host, apiKey)
   let ids = sessionCache.get(key)
   if (!ids) {
     ids = { sessionId: crypto.randomUUID(), cascadeId: cascadeIdOverride ?? crypto.randomUUID() }
+    if (sessionCache.size >= SESSION_CACHE_LIMIT) {
+      const oldest = sessionCache.keys().next()
+      if (!oldest.done) sessionCache.delete(oldest.value)
+    }
     sessionCache.set(key, ids)
   } else if (cascadeIdOverride && ids.cascadeId !== cascadeIdOverride) {
     ids = { sessionId: ids.sessionId, cascadeId: cascadeIdOverride }
@@ -394,6 +407,13 @@ function decodeUsageBlock(buf: Buffer): Extract<DecodedEvent, { kind: "usage" }>
 
 const TRACE_ID_RE = /\(trace ID: ([0-9a-f]+)\)/i
 
+/**
+ * Trailer codes that mean "your credential was rejected", as opposed to a
+ * permission or tier problem, which a fresh token would not fix.
+ */
+const isAuthFailure = (code: string | undefined): boolean =>
+  code === "unauthenticated" || code === "unauthorized" || code === "invalid_token"
+
 /** Stream decoded chat events from the GetChatMessage Connect-RPC endpoint. */
 export async function* streamChatEvents(request: StreamChatRequest): AsyncGenerator<ChatEvent> {
   const host = (request.apiServerUrl ?? DEFAULT_API_SERVER).replace(/\/$/, "")
@@ -428,6 +448,9 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
 
   if (!response.ok) {
     const text = await response.text()
+    // A 401 means the cached user_jwt was rejected. Drop it so the next attempt
+    // mints a fresh one instead of replaying a token already known to be bad.
+    if (response.status === 401) clearCachedUserJwt()
     throw new CloudChatError(`GetChatMessage HTTP ${response.status}: ${text.slice(0, 300)}`)
   }
   if (!response.body) throw new CloudChatError("GetChatMessage response had no body stream")
@@ -439,13 +462,16 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
   let sawEos = false
   let idleTimer: ReturnType<typeof setTimeout> | null = null
 
-  const cancelBody = (reason?: unknown) => {
-    try {
-      void response.body?.cancel(reason)
-    } catch {
-      // already cancelled
-    }
-  }
+  /**
+   * Release the response body.
+   *
+   * Must go through `reader`, not `response.body`: the body is locked by that
+   * reader, so `body.cancel()` rejects with "Cannot cancel a locked
+   * ReadableStream". Since it rejects rather than throws, a surrounding
+   * try/catch never saw it and the connection was silently left open on every
+   * abort and idle timeout.
+   */
+  const cancelBody = (reason?: unknown): Promise<void> => reader.cancel(reason).catch(() => {})
 
   const peek = (n: number): Buffer | null => {
     if (queuedBytes < n) return null
@@ -538,12 +564,14 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
     }
   } finally {
     if (idleTimer) clearTimeout(idleTimer)
+    // Cancel before releasing: releasing first would detach the reader, after
+    // which the body can no longer be cancelled at all.
+    await cancelBody("stream finished")
     try {
       reader.releaseLock()
     } catch {
       // lock already released
     }
-    cancelBody()
   }
 
   if (trailerError) {
@@ -555,6 +583,9 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
         trailerError.traceId,
       )
     }
+    // A token the server rejected mid-stream is just as stale as a 401: the
+    // account may have been reconnected between minting and streaming.
+    if (isAuthFailure(trailerError.code)) clearCachedUserJwt()
     throw new CloudChatError(trailerError.message, trailerError.code, trailerError.traceId)
   }
   if (!sawEos) {
