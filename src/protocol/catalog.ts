@@ -156,14 +156,30 @@ function decodeModelConfig(buf: Buffer): ModelCatalogEntry | undefined {
         if (name) capabilities.push({ name, enabled, value })
       }
     } else if (field.num === 32 && field.wire === 2 && Buffer.isBuffer(field.value)) {
-      // Pricing message (repeated): #1 type, #4 price (float32 LE)
+      // Pricing message (repeated), verified against a live
+      // GetCascadeModelConfigs dump and the prices shown in the Devin app
+      // (e.g. claude-opus-5-5 = $4/$20, claude-sonnet-5-5 = $2/$10):
+      //   #1 type            string   "Input" | "Cached input" | "Output"
+      //   #2 price           float32  USD per unit (#3 = "1M tokens")  ← real price
+      //   #3 unit            string   "1M tokens"
+      //   #4 factor          float32  per-type constant (0.1/0.007/0.28) —
+      //                              internal credit coefficient, NOT the price.
+      //                              This is what the old code read by mistake.
+      //   #5 credits         float32  same price expressed in Cognition credits
+      //   #6 flag            varint   1
+      //   #7 note            string   e.g. "Higher effort consumes more tokens"
       pricing ??= { input: 0, cachedInput: 0, output: 0 }
       let type = ""
       let price = 0
       for (const part of iterFields(field.value)) {
         if (part.num === 1 && part.wire === 2 && Buffer.isBuffer(part.value)) {
           type = part.value.toString("utf8").toLowerCase()
-        } else if (part.num === 4 && Buffer.isBuffer(part.value) && part.value.length === 4) {
+        } else if (
+          part.num === 2 &&
+          part.wire === 5 &&
+          Buffer.isBuffer(part.value) &&
+          part.value.length === 4
+        ) {
           price = part.value.readFloatLE(0)
         }
       }
