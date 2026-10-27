@@ -3,6 +3,8 @@ name: Publish
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]
 
 # Never cancel a publish that is already in flight; two of them would race for
 # the same version.
