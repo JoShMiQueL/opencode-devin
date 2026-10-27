@@ -21,9 +21,9 @@ const url = authorizeUrl({ state, challenge, redirectUri: server.redirectUri })
 // can't reach the loopback redirect (corp DNS, sandboxed browser, etc.).
 await Bun.write(".devin-login-state.json", JSON.stringify({ state, verifier, redirectUri: server.redirectUri }))
 
-console.log(`\nAbriendo el navegador para el login de Devin…`)
-console.log(`Si no se abre solo, ve a:\n\n  ${url}\n`)
-console.log(`Modo manual (sin redirect):\n  ${authorizeUrl({ state, challenge })}\n`)
+console.log(`\nOpening the browser for Devin login...`)
+console.log(`If it does not open, go to:\n\n  ${url}\n`)
+console.log(`Manual mode (no redirect):\n  ${authorizeUrl({ state, challenge })}\n`)
 
 // Windows: `start` via cmd; harmless if it fails — URL is printed above.
 Bun.spawnSync(["cmd", "/c", "start", "", url])
@@ -46,7 +46,7 @@ try {
   console.log(`Login OK.\n`)
   console.log(`DEVIN_LLM_API_KEY=${token}`)
   await Bun.write(".devin-token.env", `DEVIN_LLM_API_KEY=${token}\n`)
-  console.log(`\n(Guardado en .devin-token.env — añádelo a .gitignore si no está)`)
+  console.log(`\n(Saved to .devin-token.env — already covered by .gitignore)`)
 } finally {
   server.close()
 }
