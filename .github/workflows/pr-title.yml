@@ -1,0 +1,39 @@
+name: PR Title
+
+# Squash merges put the PR title on main, so it is the title — not the
+# individual commits — that must follow Conventional Commits for
+# release-please to classify the change.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  conventional-title:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            revert
+            docs
+            chore
+            ci
+            build
+            test
+            refactor
+            style
+            deps
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject must not start with an uppercase character.
+            Example: "fix: read model price from field #2"
