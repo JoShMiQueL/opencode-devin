@@ -25,8 +25,18 @@ console.log(`\nOpening the browser for Devin login...`)
 console.log(`If it does not open, go to:\n\n  ${url}\n`)
 console.log(`Manual mode (no redirect):\n  ${authorizeUrl({ state, challenge })}\n`)
 
-// Windows: `start` via cmd; harmless if it fails — URL is printed above.
-Bun.spawnSync(["cmd", "/c", "start", "", url])
+// Same as the plugin's openBrowser: `cmd /c start` truncates the URL at "&"
+// (cmd metacharacter) — rundll32 hands it to the browser verbatim.
+if (process.platform === "win32") {
+  Bun.spawn(["rundll32", "url.dll,FileProtocolHandler", url], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  })
+} else {
+  const cmd = process.platform === "darwin" ? ["open", url] : ["xdg-open", url]
+  Bun.spawn(cmd, { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
+}
 
 const code = await new Promise<string>((resolve, reject) => {
   server.code.then(resolve, reject)
