@@ -1,0 +1,10 @@
+# Auto-generated release notes config.
+# Excludes automation PRs (release-please) from "What's Changed" so the notes
+# only list human-authored work; the release PR itself adds no signal.
+
+changelog:
+  exclude:
+    authors:
+      - release-please
+      - github-actions
+      - Copilot
