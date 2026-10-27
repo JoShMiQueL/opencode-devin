@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.1](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.0...v0.2.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* exact-label pricing match + decode tests, shared login helpers, devin CLI ([#4](https://github.com/JoShMiQueL/opencode-devin/issues/4)) ([5963429](https://github.com/JoShMiQueL/opencode-devin/commit/5963429651c58b190d3e3ddf83a7b928a0d2d69a))
+
 ## [0.2.0](https://github.com/JoShMiQueL/opencode-devin/compare/v0.1.1...v0.2.0) (2026-09-28)
 
 ### Bug Fixes
