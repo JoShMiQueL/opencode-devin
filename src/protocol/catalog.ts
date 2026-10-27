@@ -183,9 +183,15 @@ function decodeModelConfig(buf: Buffer): ModelCatalogEntry | undefined {
           price = part.value.readFloatLE(0)
         }
       }
-      if (type.includes("input") && !type.includes("cached")) pricing.input = price
-      else if (type.includes("cached")) pricing.cachedInput = price
-      else if (type.includes("output")) pricing.output = price
+      // Match the pricing dimension by exact label, not substring: the REST
+      // API documents extra labels like "sidekick_input" (Fusion models) and
+      // "cache_read"/"cache_write" that would corrupt a substring match.
+      // Normalise case/spacing defensively — the wire strings are the same
+      // labels the REST API exposes in snake_case.
+      const normalized = type.trim().toLowerCase().replace(/[\s-]+/g, "_")
+      if (normalized === "input") pricing.input = price
+      else if (normalized === "cached_input" || normalized === "cache_read") pricing.cachedInput = price
+      else if (normalized === "output") pricing.output = price
     }
   }
 

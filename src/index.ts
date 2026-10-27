@@ -15,28 +15,11 @@
 import { Plugin, Provider } from "@opencode/plugin"
 import { DEFAULT_API_SERVER, LLM_ENV_VAR, PROVIDER_ID } from "./constants.ts"
 import { resolveCredentials, toStoredCredential } from "./credentials.ts"
-import { startCallbackServer } from "./auth/loopback.ts"
-import { authorizeUrl } from "./auth/url.ts"
-import { challengeFor, generateState, generateVerifier } from "./auth/pkce.ts"
-import { exchangeCode } from "./auth/exchange.ts"
+import { openBrowser } from "./auth/browser.ts"
+import { loginAuto, loginManual } from "./auth/login.ts"
 import { fetchModels } from "./catalog.ts"
 
 export { createDevinProvider } from "./provider.ts"
-
-function openBrowser(url: string): void {
-  if (process.platform === "win32") {
-    // `cmd /c start` truncates URLs at "&" (cmd metacharacter) when spawned
-    // from Bun — rundll32 hands the URL to the default browser verbatim.
-    Bun.spawn(["rundll32", "url.dll,FileProtocolHandler", url], {
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-    })
-    return
-  }
-  const cmd = process.platform === "darwin" ? ["open", url] : ["xdg-open", url]
-  Bun.spawn(cmd, { stdin: "ignore", stdout: "ignore", stderr: "ignore" })
-}
 
 export default Plugin.define({
   id: PROVIDER_ID,
@@ -76,23 +59,13 @@ export default Plugin.define({
         integrationID: PROVIDER_ID,
         method: { id: "devin", type: "oauth", label: "Log in with Devin (browser)" },
         authorize: async () => {
-          const verifier = generateVerifier()
-          const state = generateState()
-          const server = await startCallbackServer(state)
-          const url = authorizeUrl({ state, challenge: await challengeFor(verifier), redirectUri: server.redirectUri })
-          openBrowser(url)
+          const flow = await loginAuto()
+          openBrowser(flow.url)
           return {
-            url,
-            instructions: `Log in to Devin in the opened browser tab. If it did not open, go to: ${url}`,
+            url: flow.url,
+            instructions: `Log in to Devin in the opened browser tab. If it did not open, go to: ${flow.url}`,
             mode: "auto" as const,
-            callback: (async () => {
-              try {
-                const code = await server.code
-                return toStoredCredential(await exchangeCode({ code, verifier }))
-              } finally {
-                server.close()
-              }
-            })(),
+            callback: flow.finish().then(toStoredCredential),
           }
         },
       })
@@ -101,14 +74,13 @@ export default Plugin.define({
         integrationID: PROVIDER_ID,
         method: { id: "code", type: "oauth", label: "Paste code (headless)" },
         authorize: async () => {
-          const verifier = generateVerifier()
-          const state = generateState()
+          const flow = await loginManual()
           return {
-            url: authorizeUrl({ state, challenge: await challengeFor(verifier) }),
+            url: flow.url,
             instructions:
               "Open the URL, sign in to Devin, and copy the code shown on the page, then paste it here.",
             mode: "code" as const,
-            callback: async (code: string) => toStoredCredential(await exchangeCode({ code: code.trim(), verifier })),
+            callback: async (code: string) => toStoredCredential(await flow.finish(code)),
           }
         },
       })

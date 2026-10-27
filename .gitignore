@@ -2,3 +2,7 @@ node_modules/
 dist/
 *.tgz
 .tmp*
+
+.devin-token.env
+
+.devin-login-state.json

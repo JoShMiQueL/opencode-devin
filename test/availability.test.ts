@@ -2,71 +2,18 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { clearCachedUserJwt } from "../src/protocol/auth.ts"
 import { createDevin } from "../src/protocol/model.ts"
 import { ModelNotAvailableError } from "../src/protocol/catalog.ts"
-import { encodeMessage, encodeString, encodeVarintField } from "../src/protocol/wire.ts"
+import { catalogReply, modelConfig, silenceWarn, stubFetch, uniqueHost as host, realFetch } from "./helpers.ts"
 
 const API_KEY = "devin-session-token$availability"
-const realFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = realFetch
   clearCachedUserJwt()
 })
 
-const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url")
-const jwt = (exp: number) => `${b64({ alg: "HS256", typ: "JWT" })}.${b64({ exp })}.${b64({ sig: "s" })}`
-const inSeconds = (delta: number) => Math.floor(Date.now() / 1000) + delta
-
-/** One `ModelConfig` message, per the field numbers the catalog decoder reads. */
-const modelConfig = (modelUid: string, opts: { label?: string; disabled?: boolean } = {}) =>
-  Buffer.concat([
-    encodeString(1, opts.label ?? modelUid),
-    encodeVarintField(4, opts.disabled ? 1 : 0),
-    encodeVarintField(18, 200_000),
-    encodeString(22, modelUid),
-  ])
-
-/** `GetCascadeModelConfigs` reply: field 1, repeated ModelConfig. */
-const catalogReply = (configs: Buffer[]) =>
-  new Uint8Array(Buffer.concat(configs.map((config) => encodeMessage(1, config))))
-
-/**
- * A distinct host per test keeps the module-level catalog cache from leaking
- * between cases, since it is keyed by credential and host.
- */
-let hostSeq = 0
-const host = () => `https://tenant-${hostSeq++}.test`
-
-const stub = (options: { catalog?: () => Response; mint?: () => Response } = {}) => {
-  globalThis.fetch = ((input: Parameters<typeof fetch>[0]) => {
-    const url = String(input)
-    const respond = () => {
-      if (url.includes("GetUserJwt")) {
-        return options.mint?.() ?? new Response(new Uint8Array(encodeString(1, jwt(inSeconds(600)))), { status: 200 })
-      }
-      if (url.includes("GetCascadeModelConfigs")) {
-        return options.catalog?.() ?? new Response("not configured", { status: 500 })
-      }
-      return new Response("unexpected endpoint", { status: 500 })
-    }
-    return Promise.resolve(respond())
-  }) as typeof fetch
-}
+const stub = stubFetch
 
 const callOptions = { prompt: [] as never, tools: undefined }
-
-const silenceWarn = () => {
-  const original = console.warn
-  let captured: string[] = []
-  console.warn = (...args: unknown[]) => {
-    captured.push(args.map(String).join(" "))
-  }
-  return {
-    restore: () => {
-      console.warn = original
-    },
-    captured: () => captured,
-  }
-}
 
 describe("model availability", () => {
   test("proceeds when the catalog lists the model as enabled", async () => {
