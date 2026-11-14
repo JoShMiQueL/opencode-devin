@@ -251,36 +251,61 @@ describe("collectEvents (non-streaming path)", () => {
 })
 
 describe("resolveEffortUid", () => {
+  const member = (modelUid: string, baseModelUid: string, effortLevel?: string) =>
+    entry({ modelUid, baseModelUid, effortLevel })
   const catalog: ModelCatalogEntry[] = [
-    entry({ modelUid: "claude-opus-4-8" }),
-    entry({ modelUid: "claude-opus-4-8-medium", baseModelUid: "claude-opus-4-8", effortLevel: "medium" }),
-    entry({ modelUid: "claude-opus-4-8-high", baseModelUid: "claude-opus-4-8", effortLevel: "high" }),
+    member("claude-opus-4-8-medium", "claude-opus-4-8", "medium"),
+    member("claude-opus-4-8-high", "claude-opus-4-8", "high"),
+    member("claude-opus-4-8-medium-fast", "claude-opus-4-8-fast", "medium"),
+    member("claude-opus-4-8-high-fast", "claude-opus-4-8-fast", "high"),
+    // The bare uid is the family's high effort, as the catalog reports it.
+    member("glm-5-2", "glm-5-2", "high"),
+    member("glm-5-2-max", "glm-5-2", "max"),
+    member("kimi-k2-6", "kimi-k2-6"),
   ]
 
-  test("swaps an existing effort suffix", () => {
+  test("picks the family member for the requested effort", () => {
+    expect(resolveEffortUid("claude-opus-4-8", catalog, "high")).toBe("claude-opus-4-8-high")
+    expect(resolveEffortUid("glm-5-2", catalog, "max")).toBe("glm-5-2-max")
+    expect(resolveEffortUid("glm-5-2", catalog, "high")).toBe("glm-5-2")
+  })
+
+  test("keeps a modifier that follows the effort", () => {
+    expect(resolveEffortUid("claude-opus-4-8-fast", catalog, "high")).toBe("claude-opus-4-8-high-fast")
+    expect(resolveEffortUid("claude-opus-4-8-medium-fast", catalog, "high")).toBe("claude-opus-4-8-high-fast")
+  })
+
+  test("falls back to the family default when no effort is requested", () => {
+    // Medium when the family id is not a uid; the bare uid when it is.
+    expect(resolveEffortUid("claude-opus-4-8", catalog, undefined)).toBe("claude-opus-4-8-medium")
+    expect(resolveEffortUid("claude-opus-4-8-fast", catalog, undefined)).toBe("claude-opus-4-8-medium-fast")
+    expect(resolveEffortUid("glm-5-2", catalog, undefined)).toBe("glm-5-2")
+  })
+
+  test("falls back to the family default for an effort the family lacks", () => {
+    expect(resolveEffortUid("claude-opus-4-8", catalog, "xhigh")).toBe("claude-opus-4-8-medium")
+    expect(resolveEffortUid("claude-opus-4-8", catalog, "turbo")).toBe("claude-opus-4-8-medium")
+  })
+
+  test("still accepts a full uid, with or without an override", () => {
+    expect(resolveEffortUid("claude-opus-4-8-medium", catalog, undefined)).toBe("claude-opus-4-8-medium")
     expect(resolveEffortUid("claude-opus-4-8-medium", catalog, "high")).toBe("claude-opus-4-8-high")
+    // An effort the catalog does not list is still tried on a uid that has one.
     expect(resolveEffortUid("claude-opus-4-8-high", catalog, "none")).toBe("claude-opus-4-8-none")
   })
 
-  test("appends a suffix when the catalog lists that variant", () => {
-    expect(resolveEffortUid("claude-opus-4-8", catalog, "high")).toBe("claude-opus-4-8-high")
+  test("leaves a model without efforts alone", () => {
+    expect(resolveEffortUid("kimi-k2-6", catalog, "high")).toBe("kimi-k2-6")
+    expect(resolveEffortUid("kimi-k2-6", catalog, undefined)).toBe("kimi-k2-6")
   })
 
-  test("leaves the uid alone for an effort the catalog does not offer", () => {
-    expect(resolveEffortUid("claude-opus-4-8", catalog, "xhigh")).toBe("claude-opus-4-8")
-  })
-
-  test("ignores an unknown or missing effort", () => {
-    expect(resolveEffortUid("claude-opus-4-8", catalog, "turbo")).toBe("claude-opus-4-8")
-    expect(resolveEffortUid("claude-opus-4-8", catalog, undefined)).toBe("claude-opus-4-8")
-  })
-
-  test("is case-insensitive on the requested effort", () => {
+  test("accepts an effort in any case", () => {
     expect(resolveEffortUid("claude-opus-4-8", catalog, "HIGH")).toBe("claude-opus-4-8-high")
   })
 
-  test("never appends without a catalog to confirm the variant exists", () => {
+  test("without a catalog, sends the id as given", () => {
     expect(resolveEffortUid("claude-opus-4-8", undefined, "high")).toBe("claude-opus-4-8")
+    expect(resolveEffortUid("claude-opus-4-8-medium", undefined, "high")).toBe("claude-opus-4-8-high")
   })
 })
 
@@ -292,12 +317,28 @@ describe("splitEffortSuffix", () => {
     })
   })
 
-  test("leaves a uid without an effort alone", () => {
-    expect(splitEffortSuffix("claude-opus-4-8")).toEqual({ baseModelUid: "claude-opus-4-8" })
+  test("finds an effort that is followed by a modifier", () => {
+    expect(splitEffortSuffix("claude-opus-5-5-high-fast")).toEqual({
+      baseModelUid: "claude-opus-5-5-fast",
+      effortLevel: "high",
+    })
+    expect(splitEffortSuffix("gpt-5-6-sol-none-priority")).toEqual({
+      baseModelUid: "gpt-5-6-sol-priority",
+      effortLevel: "none",
+    })
+    expect(splitEffortSuffix("glm-5-2-max-1m")).toEqual({ baseModelUid: "glm-5-2-1m", effortLevel: "max" })
+    expect(splitEffortSuffix("gemini-3-5-flash-minimal")).toEqual({
+      baseModelUid: "gemini-3-5-flash",
+      effortLevel: "minimal",
+    })
   })
 
-  test("requires a whole trailing segment", () => {
-    // Neither a partial segment nor a mid-uid word is an effort.
+  test("leaves a uid without an effort alone", () => {
+    expect(splitEffortSuffix("claude-opus-4-8")).toEqual({ baseModelUid: "claude-opus-4-8" })
+    expect(splitEffortSuffix("claude-opus-4-6-thinking-1m")).toEqual({ baseModelUid: "claude-opus-4-6-thinking-1m" })
+  })
+
+  test("requires a whole segment, and never the first", () => {
     expect(splitEffortSuffix("model-highs")).toEqual({ baseModelUid: "model-highs" })
     expect(splitEffortSuffix("high-claude-opus")).toEqual({ baseModelUid: "high-claude-opus" })
   })
