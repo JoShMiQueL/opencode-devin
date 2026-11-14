@@ -99,6 +99,8 @@ export interface StreamChatRequest {
   cascadeId?: string
   completionOpts?: CompletionOptions
   signal?: AbortSignal
+  /** Override the default timeouts. Exists so tests need not wait out the real ones. */
+  timeouts?: { ttfbMs?: number; idleMs?: number }
 }
 
 function encodeImageData(image: ChatImage): Buffer {
@@ -433,18 +435,34 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
     completionOpts: request.completionOpts,
   })
   const body = frameConnectStream(proto, true)
-  const ttfbTimeout = AbortSignal.timeout(STREAM_TTFB_MS)
-  const response = await fetch(`${host}/exa.api_server_pb.ApiServerService/GetChatMessage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/connect+proto",
-      "Connect-Protocol-Version": "1",
-      "Connect-Content-Encoding": "gzip",
-      "Connect-Accept-Encoding": "gzip",
-    },
-    body: new Uint8Array(body),
-    signal: request.signal ? AbortSignal.any([request.signal, ttfbTimeout]) : ttfbTimeout,
-  })
+  const ttfbMs = request.timeouts?.ttfbMs ?? STREAM_TTFB_MS
+  const idleMs = request.timeouts?.idleMs ?? STREAM_IDLE_MS
+  // The fetch signal also governs the response body, so the TTFB timer must be
+  // cleared once headers arrive. `AbortSignal.timeout()` cannot be cleared and
+  // would abort a healthy stream `ttfbMs` after the request started.
+  const ttfb = new AbortController()
+  const ttfbError = new CloudChatError(`GetChatMessage got no response within ${ttfbMs}ms`, "ttfb_timeout")
+  const ttfbTimer = setTimeout(() => ttfb.abort(ttfbError), ttfbMs)
+  let response: Response
+  try {
+    response = await fetch(`${host}/exa.api_server_pb.ApiServerService/GetChatMessage`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/connect+proto",
+        "Connect-Protocol-Version": "1",
+        "Connect-Content-Encoding": "gzip",
+        "Connect-Accept-Encoding": "gzip",
+      },
+      body: new Uint8Array(body),
+      signal: request.signal ? AbortSignal.any([request.signal, ttfb.signal]) : ttfb.signal,
+    })
+  } catch (cause) {
+    // Runtimes differ on whether fetch rejects with the abort reason itself.
+    if (ttfb.signal.aborted && !request.signal?.aborted) throw ttfbError
+    throw cause
+  } finally {
+    clearTimeout(ttfbTimer)
+  }
 
   if (!response.ok) {
     const text = await response.text()
@@ -461,6 +479,8 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
   let trailerError: { code?: string; message: string; traceId?: string } | null = null
   let sawEos = false
   let idleTimer: ReturnType<typeof setTimeout> | null = null
+  let idleTimedOut = false
+  const onAbort = () => cancelBody(request.signal?.reason)
 
   /**
    * Release the response body.
@@ -508,16 +528,23 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
 
   try {
     if (request.signal?.aborted) throw request.signal.reason
-    request.signal?.addEventListener("abort", () => cancelBody(request.signal?.reason), { once: true })
+    request.signal?.addEventListener("abort", onAbort, { once: true })
 
     while (true) {
       if (idleTimer) clearTimeout(idleTimer)
-      idleTimer = setTimeout(() => cancelBody(new Error(`idle timeout (${STREAM_IDLE_MS}ms)`)), STREAM_IDLE_MS)
+      idleTimer = setTimeout(() => {
+        idleTimedOut = true
+        cancelBody(new Error(`idle timeout (${idleMs}ms)`))
+      }, idleMs)
       const { value, done } = await reader.read()
       if (idleTimer) {
         clearTimeout(idleTimer)
         idleTimer = null
       }
+      // Cancelling the reader resolves the pending read as `done`, so the cause
+      // has to be reported here or it surfaces as a misleading truncated stream.
+      if (request.signal?.aborted) throw request.signal.reason
+      if (idleTimedOut) throw new CloudChatError(`GetChatMessage stream was idle for ${idleMs}ms`, "idle_timeout")
       if (done) break
       if (value) {
         chunks.push(Buffer.from(value))
@@ -564,6 +591,7 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
     }
   } finally {
     if (idleTimer) clearTimeout(idleTimer)
+    request.signal?.removeEventListener("abort", onAbort)
     // Cancel before releasing: releasing first would detach the reader, after
     // which the body can no longer be cancelled at all.
     await cancelBody("stream finished")
