@@ -172,9 +172,10 @@ describe("stream shape", () => {
   test("splits output tokens into text and reasoning", async () => {
     const parts = await drain(
       convertStreamEvents(
+        // Cascade's input count excludes cached tokens: 600 uncached + 400 read.
         stream({ kind: "finish", reason: "stop" }, {
           kind: "usage",
-          promptTokens: 1000,
+          promptTokens: 600,
           cachedInputTokens: 400,
           completionTokens: 300,
           reasoningTokens: 120,

@@ -9,6 +9,7 @@
  * Originally ported from pi-devin-auth (MIT, Copyright (c) 2026 nmzpy).
  */
 
+import { APICallError } from "@ai-sdk/provider"
 import { encodeMessage, iterFields } from "./wire.ts"
 import { buildMetadata } from "./metadata.ts"
 import { DEFAULT_API_SERVER } from "../constants.ts"
@@ -22,10 +23,15 @@ const MINT_TIMEOUT_MS = 30_000
  */
 const FALLBACK_JWT_TTL_SECONDS = 600
 
-export class CloudAuthError extends Error {
+/**
+ * An `APICallError`, so the host sees the status: a rejected session token is
+ * then reported as an auth failure instead of being retried as unknown.
+ */
+export class CloudAuthError extends APICallError {
   readonly status: number
-  constructor(message: string, status: number) {
-    super(message)
+  constructor(message: string, status: number, url = "") {
+    // A 200 that carries no token is a server-side fault, not a success.
+    super({ message, url, requestBodyValues: undefined, statusCode: status >= 400 ? status : 502 })
     this.name = "CloudAuthError"
     this.status = status
   }
@@ -46,7 +52,8 @@ export async function mintUserJwt(apiKey: string, host = DEFAULT_API_SERVER, sig
   })
   const request = encodeMessage(1, metadata)
   const timeout = AbortSignal.timeout(MINT_TIMEOUT_MS)
-  const response = await fetch(`${host.replace(/\/$/, "")}/exa.auth_pb.AuthService/GetUserJwt`, {
+  const url = `${host.replace(/\/$/, "")}/exa.auth_pb.AuthService/GetUserJwt`
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/proto", "Connect-Protocol-Version": "1" },
     body: new Uint8Array(request),
@@ -55,7 +62,7 @@ export async function mintUserJwt(apiKey: string, host = DEFAULT_API_SERVER, sig
 
   const buf = Buffer.from(await response.arrayBuffer())
   if (!response.ok) {
-    throw new CloudAuthError(`GetUserJwt HTTP ${response.status}: ${buf.toString("utf8").slice(0, 400)}`, response.status)
+    throw new CloudAuthError(`GetUserJwt HTTP ${response.status}: ${buf.toString("utf8").slice(0, 400)}`, response.status, url)
   }
 
   let jwt: string | null = null
@@ -69,7 +76,7 @@ export async function mintUserJwt(apiKey: string, host = DEFAULT_API_SERVER, sig
     }
   }
   if (!jwt) {
-    throw new CloudAuthError(`GetUserJwt 200 but no field-1 JWT found (${buf.length} bytes)`, response.status)
+    throw new CloudAuthError(`GetUserJwt 200 but no field-1 JWT found (${buf.length} bytes)`, response.status, url)
   }
 
   let expiresAt = Math.floor(Date.now() / 1000) + FALLBACK_JWT_TTL_SECONDS
@@ -104,6 +111,17 @@ let cache: (UserJwt & { apiKey: string; host: string }) | null = null
 const inFlight = new Map<string, Promise<UserJwt>>()
 let cacheEpoch = 0
 
+/** Settle with `promise`, or reject as soon as `signal` aborts. */
+function untilAborted<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.reject(signal.reason)
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason)
+    signal.addEventListener("abort", onAbort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort))
+  })
+}
+
 /** Mint a user_jwt, reusing a cached one until shortly before expiry. */
 export async function getCachedUserJwt(apiKey: string, host = DEFAULT_API_SERVER, signal?: AbortSignal): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
@@ -111,21 +129,24 @@ export async function getCachedUserJwt(apiKey: string, host = DEFAULT_API_SERVER
     return cache.jwt
   }
   const key = credentialKey(host, apiKey)
-  const pending = inFlight.get(key)
-  if (pending) return (await pending).jwt
-
-  const promise = mintUserJwt(apiKey, host, signal)
-  inFlight.set(key, promise)
-  const epochAtStart = cacheEpoch
-  try {
-    const minted = await promise
-    if (cacheEpoch === epochAtStart) {
-      cache = { ...minted, apiKey, host }
-    }
-    return minted.jwt
-  } finally {
-    inFlight.delete(key)
+  let pending = inFlight.get(key)
+  if (!pending) {
+    const epochAtStart = cacheEpoch
+    // The mint is shared by every caller waiting on this credential, so it must
+    // not be tied to one caller's signal: cancelling that request would fail
+    // the others. It is bounded by its own timeout instead.
+    const shared: Promise<UserJwt> = mintUserJwt(apiKey, host)
+      .then((minted) => {
+        if (cacheEpoch === epochAtStart) cache = { ...minted, apiKey, host }
+        return minted
+      })
+      .finally(() => {
+        if (inFlight.get(key) === shared) inFlight.delete(key)
+      })
+    inFlight.set(key, shared)
+    pending = shared
   }
+  return (await untilAborted(pending, signal)).jwt
 }
 
 /** Drop the cached user_jwt (e.g. after an auth failure). */
