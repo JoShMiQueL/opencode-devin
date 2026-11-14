@@ -6,6 +6,7 @@
  * Originally ported from pi-devin-auth (MIT, Copyright (c) 2026 nmzpy).
  */
 
+import { APICallError } from "@ai-sdk/provider"
 import { encodeMessage, iterFields } from "./wire.ts"
 import { buildMetadata } from "./metadata.ts"
 import { clearCachedUserJwt, credentialKey, getCachedUserJwt } from "./auth.ts"
@@ -59,16 +60,23 @@ export interface Catalog {
  * upstream request would be rejected regardless. A model that is simply absent
  * is *not* asserted on, because the catalog is not guaranteed to enumerate every
  * uid Cascade accepts and a false rejection would break a working model.
+ *
+ * Reported as a 403 so the host does not retry it: nothing changes between
+ * attempts.
  */
-export class ModelNotAvailableError extends Error {
+export class ModelNotAvailableError extends APICallError {
   readonly modelUid: string
   readonly label: string
   constructor(modelUid: string, label: string) {
-    super(
-      label && label !== modelUid
-        ? `Model "${label}" (uid=${modelUid}) is not enabled for your Cognition account tier.`
-        : `Model uid "${modelUid}" is not enabled for your Cognition account tier.`,
-    )
+    super({
+      message:
+        label && label !== modelUid
+          ? `Model "${label}" (uid=${modelUid}) is not enabled for your Cognition account tier.`
+          : `Model uid "${modelUid}" is not enabled for your Cognition account tier.`,
+      url: "",
+      requestBodyValues: undefined,
+      statusCode: 403,
+    })
     this.name = "ModelNotAvailableError"
     this.modelUid = modelUid
     this.label = label
@@ -233,6 +241,12 @@ export async function getCachedCatalog(
     }
   }
   const promise = fetchCatalog(apiKey, host, signal)
+  // Logged once, where the fetch is owned. The visible symptom is an empty
+  // `/models` list, and without this nothing says why. A caller cancelling its
+  // own request is not a failure worth reporting.
+  promise.catch((error: unknown) => {
+    if (!signal?.aborted) console.warn("[opencode-devin] could not load the model catalog:", error)
+  })
   inFlight = promise
   inFlightKey = key
   try {

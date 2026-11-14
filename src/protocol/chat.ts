@@ -6,6 +6,7 @@
  */
 
 import * as zlib from "node:zlib"
+import { APICallError } from "@ai-sdk/provider"
 import {
   encodeMessage,
   encodeString,
@@ -19,16 +20,85 @@ import { DEFAULT_API_SERVER } from "../constants.ts"
 
 const STREAM_IDLE_MS = 120_000
 const STREAM_TTFB_MS = 60_000
+const DEFAULT_MAX_OUTPUT_TOKENS = 64_000
 const MAX_TOOL_DESC_LEN = 6998
 
-export class CloudChatError extends Error {
+/**
+ * HTTP status equivalents of the Connect error codes, per the Connect protocol.
+ *
+ * A streaming RPC always answers 200 and reports failure in the trailer, so the
+ * trailer code is the only signal of what went wrong. Hosts decide whether to
+ * retry from the status: without one every failure looks unknown, and opencode
+ * retries unknown errors ten times, including ones that cannot succeed.
+ */
+const CONNECT_CODE_STATUS: Record<string, number> = {
+  canceled: 499,
+  unknown: 500,
+  invalid_argument: 400,
+  deadline_exceeded: 504,
+  not_found: 404,
+  already_exists: 409,
+  permission_denied: 403,
+  resource_exhausted: 429,
+  failed_precondition: 400,
+  aborted: 409,
+  out_of_range: 400,
+  unimplemented: 501,
+  internal: 500,
+  unavailable: 503,
+  data_loss: 500,
+  unauthenticated: 401,
+  // Raised by this client rather than by the server.
+  ttfb_timeout: 504,
+  idle_timeout: 504,
+  truncated_stream: 502,
+  invalid_frame: 502,
+}
+
+/** Exported for tests. */
+export function statusForCode(code: string | undefined, message: string): number {
+  // An exhausted quota is not worth retrying, whichever code it arrives under,
+  // and under `resource_exhausted` it would otherwise look like a rate limit.
+  if (/\bquota\b|out of credits/i.test(message)) return 402
+  return (code && CONNECT_CODE_STATUS[code]) || 500
+}
+
+export interface CloudChatErrorOptions {
+  code?: string
+  traceId?: string
+  /** HTTP status when the server sent one; otherwise derived from `code`. */
+  status?: number
+  url?: string
+  responseBody?: string
+  /**
+   * The failure was a rejected `user_jwt` that has since been dropped, so the
+   * same request will succeed with a fresh one. Without this an auth status
+   * reads as final and the host gives up.
+   */
+  retryWithFreshToken?: boolean
+}
+
+/**
+ * A failed chat request.
+ *
+ * It is an `APICallError` so hosts can read `statusCode` and `isRetryable`
+ * instead of guessing from the message.
+ */
+export class CloudChatError extends APICallError {
   readonly code?: string
   readonly traceId?: string
-  constructor(message: string, code?: string, traceId?: string) {
-    super(message)
+  constructor(message: string, options: CloudChatErrorOptions = {}) {
+    super({
+      message,
+      url: options.url ?? "",
+      requestBodyValues: undefined,
+      statusCode: options.status ?? statusForCode(options.code, message),
+      responseBody: options.responseBody,
+      ...(options.retryWithFreshToken ? { isRetryable: true, responseHeaders: { "x-should-retry": "true" } } : {}),
+    })
     this.name = "CloudChatError"
-    this.code = code
-    this.traceId = traceId
+    this.code = options.code
+    this.traceId = options.traceId
   }
 }
 
@@ -58,7 +128,11 @@ export interface ChatHistoryItem {
   content: ChatContent
   tool_call_id?: string
   tool_calls?: ChatToolCall[]
+  /** For a tool message: the tool reported a failure. */
+  is_error?: boolean
 }
+
+export type ChatToolChoice = { type: "auto" | "none" | "required" } | { type: "tool"; toolName: string }
 
 export interface ChatToolDefinition {
   name: string
@@ -67,7 +141,6 @@ export interface ChatToolDefinition {
 }
 
 export interface CompletionOptions {
-  maxInputTokens?: number
   maxOutputTokens?: number
   temperature?: number
   topP?: number
@@ -96,9 +169,12 @@ export interface StreamChatRequest {
   modelUid: string
   messages: ChatHistoryItem[]
   tools?: ChatToolDefinition[]
+  toolChoice?: ChatToolChoice
   cascadeId?: string
   completionOpts?: CompletionOptions
   signal?: AbortSignal
+  /** Override the default timeouts. Exists so tests need not wait out the real ones. */
+  timeouts?: { ttfbMs?: number; idleMs?: number }
 }
 
 function encodeImageData(image: ChatImage): Buffer {
@@ -114,7 +190,7 @@ function encodeToolCall(call: ChatToolCall): Buffer {
 function encodePrompt(
   content: Exclude<ChatContent, string>,
   source: number,
-  opts?: { toolCallId?: string; toolCalls?: ChatToolCall[] },
+  opts?: { toolCallId?: string; toolCalls?: ChatToolCall[]; isError?: boolean },
 ): Buffer {
   const text = content
     .filter((part): part is { type: "text"; text: string } => part.type === "text")
@@ -129,6 +205,7 @@ function encodePrompt(
   ]
   if (opts?.toolCallId) parts.push(encodeString(7, opts.toolCallId))
   if (opts?.toolCalls) for (const call of opts.toolCalls) parts.push(encodeMessage(6, encodeToolCall(call)))
+  if (opts?.isError) parts.push(encodeVarintField(9, 1))
   for (const image of images) parts.push(encodeMessage(10, encodeImageData(image)))
   return Buffer.concat(parts)
 }
@@ -198,16 +275,37 @@ function encodeCompletionConfiguration(opts: CompletionOptions): Buffer {
     buf.writeDoubleLE(value, 0)
     return Buffer.concat([Buffer.from([(fieldNum << 3) | 1]), buf])
   }
+  // Field names are from the `CompletionConfiguration` descriptor in a build
+  // of the same codebase. #2 was checked against the live API: it caps the
+  // output (2 = 25 stops at 25 output tokens with reason MAX_TOKENS) and does
+  // not truncate the input (a 164k-token prompt passes with 2 = 64000). #3 is
+  // sent as before but had no observable effect (3 = 3 did not stop a
+  // 200-line reply).
+  //   #1 num_completions   #2 max_tokens   #3 max_newlines   #5 temperature
+  //   #6 first_temperature #7 top_k        #8 top_p          #11 fim_eot_prob_threshold
   return Buffer.concat([
     encodeVarintField(1, 1),
-    encodeVarintField(2, opts.maxInputTokens ?? 64_000),
-    encodeVarintField(3, opts.maxOutputTokens ?? 128_000),
+    encodeVarintField(2, opts.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS),
+    encodeVarintField(3, 128_000),
     float64(5, opts.temperature ?? 0.7),
-    float64(6, opts.topP ?? 0.95),
+    float64(6, 0.95),
     encodeVarintField(7, opts.topK ?? 50),
-    float64(8, 1.0),
+    float64(8, opts.topP ?? 1.0),
     float64(11, 1.0),
   ])
+}
+
+/**
+ * `ChatToolChoice`: #1 option_name | #2 tool_name (oneof).
+ *
+ * Field #12 of the request. Checked against the live API on Claude, GPT,
+ * Gemini and Kimi models: "required" forces a tool call, "none" suppresses
+ * them, and a tool name forces that tool. "auto" is the default, so it is not
+ * sent at all.
+ */
+function encodeToolChoice(choice: ChatToolChoice): Buffer | undefined {
+  if (choice.type === "auto") return undefined
+  return encodeMessage(12, choice.type === "tool" ? encodeString(2, choice.toolName) : encodeString(1, choice.type))
 }
 
 interface SessionIds {
@@ -249,6 +347,7 @@ function buildGetChatMessageRequest(args: {
   modelUid: string
   messages: ChatHistoryItem[]
   tools?: ChatToolDefinition[]
+  toolChoice?: ChatToolChoice
   cascadeId: string
   promptId: string
   sessionId: string
@@ -270,6 +369,7 @@ function buildGetChatMessageRequest(args: {
       encodePrompt(normalizeContent(message.content), SOURCE_BY_ROLE[message.role] ?? 1, {
         toolCallId: message.tool_call_id,
         toolCalls: message.tool_calls,
+        isError: message.is_error,
       }),
     ),
   )
@@ -279,16 +379,19 @@ function buildGetChatMessageRequest(args: {
   //   #7  request_type (varint enum, 5 = CASCADE)
   //   #8  completion_configuration (message)
   //   #10 tools (repeated ChatToolDefinition)
+  //   #12 tool_choice (message, omitted for "auto")
   //   #16 cascade_id (string)
   //   #21 chat_model_uid (string)
   //   #22 prompt_id (string)
   const toolParts = (args.tools ?? []).map((tool) => encodeMessage(10, encodeToolDef(tool)))
+  const toolChoice = args.tools?.length && args.toolChoice ? encodeToolChoice(args.toolChoice) : undefined
   return Buffer.concat([
     encodeMessage(1, metadata),
     ...promptParts,
     encodeVarintField(7, 5),
     encodeMessage(8, encodeCompletionConfiguration(args.completionOpts ?? {})),
     ...toolParts,
+    ...(toolChoice ? [toolChoice] : []),
     encodeString(16, args.cascadeId),
     encodeString(21, args.modelUid),
     encodeString(22, args.promptId),
@@ -425,6 +528,7 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
     modelUid: request.modelUid,
     messages: request.messages,
     tools: request.tools,
+    toolChoice: request.toolChoice,
     cascadeId: sessionIds.cascadeId,
     promptId: crypto.randomUUID(),
     sessionId: sessionIds.sessionId,
@@ -433,27 +537,49 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
     completionOpts: request.completionOpts,
   })
   const body = frameConnectStream(proto, true)
-  const ttfbTimeout = AbortSignal.timeout(STREAM_TTFB_MS)
-  const response = await fetch(`${host}/exa.api_server_pb.ApiServerService/GetChatMessage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/connect+proto",
-      "Connect-Protocol-Version": "1",
-      "Connect-Content-Encoding": "gzip",
-      "Connect-Accept-Encoding": "gzip",
-    },
-    body: new Uint8Array(body),
-    signal: request.signal ? AbortSignal.any([request.signal, ttfbTimeout]) : ttfbTimeout,
-  })
+  const ttfbMs = request.timeouts?.ttfbMs ?? STREAM_TTFB_MS
+  const idleMs = request.timeouts?.idleMs ?? STREAM_IDLE_MS
+  // The fetch signal also governs the response body, so the TTFB timer must be
+  // cleared once headers arrive. `AbortSignal.timeout()` cannot be cleared and
+  // would abort a healthy stream `ttfbMs` after the request started.
+  const ttfb = new AbortController()
+  const url = `${host}/exa.api_server_pb.ApiServerService/GetChatMessage`
+  const ttfbError = new CloudChatError(`GetChatMessage got no response within ${ttfbMs}ms`, { code: "ttfb_timeout", url })
+  const ttfbTimer = setTimeout(() => ttfb.abort(ttfbError), ttfbMs)
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/connect+proto",
+        "Connect-Protocol-Version": "1",
+        "Connect-Content-Encoding": "gzip",
+        "Connect-Accept-Encoding": "gzip",
+      },
+      body: new Uint8Array(body),
+      signal: request.signal ? AbortSignal.any([request.signal, ttfb.signal]) : ttfb.signal,
+    })
+  } catch (cause) {
+    // Runtimes differ on whether fetch rejects with the abort reason itself.
+    if (ttfb.signal.aborted && !request.signal?.aborted) throw ttfbError
+    throw cause
+  } finally {
+    clearTimeout(ttfbTimer)
+  }
 
   if (!response.ok) {
     const text = await response.text()
     // A 401 means the cached user_jwt was rejected. Drop it so the next attempt
     // mints a fresh one instead of replaying a token already known to be bad.
     if (response.status === 401) clearCachedUserJwt()
-    throw new CloudChatError(`GetChatMessage HTTP ${response.status}: ${text.slice(0, 300)}`)
+    throw new CloudChatError(`GetChatMessage HTTP ${response.status}: ${text.slice(0, 300)}`, {
+      status: response.status,
+      url,
+      responseBody: text,
+      retryWithFreshToken: response.status === 401,
+    })
   }
-  if (!response.body) throw new CloudChatError("GetChatMessage response had no body stream")
+  if (!response.body) throw new CloudChatError("GetChatMessage response had no body stream", { status: 502, url })
 
   const reader = response.body.getReader()
   const chunks: Buffer[] = []
@@ -461,6 +587,8 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
   let trailerError: { code?: string; message: string; traceId?: string } | null = null
   let sawEos = false
   let idleTimer: ReturnType<typeof setTimeout> | null = null
+  let idleTimedOut = false
+  const onAbort = () => cancelBody(request.signal?.reason)
 
   /**
    * Release the response body.
@@ -508,15 +636,24 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
 
   try {
     if (request.signal?.aborted) throw request.signal.reason
-    request.signal?.addEventListener("abort", () => cancelBody(request.signal?.reason), { once: true })
+    request.signal?.addEventListener("abort", onAbort, { once: true })
 
     while (true) {
       if (idleTimer) clearTimeout(idleTimer)
-      idleTimer = setTimeout(() => cancelBody(new Error(`idle timeout (${STREAM_IDLE_MS}ms)`)), STREAM_IDLE_MS)
+      idleTimer = setTimeout(() => {
+        idleTimedOut = true
+        cancelBody(new Error(`idle timeout (${idleMs}ms)`))
+      }, idleMs)
       const { value, done } = await reader.read()
       if (idleTimer) {
         clearTimeout(idleTimer)
         idleTimer = null
+      }
+      // Cancelling the reader resolves the pending read as `done`, so the cause
+      // has to be reported here or it surfaces as a misleading truncated stream.
+      if (request.signal?.aborted) throw request.signal.reason
+      if (idleTimedOut) {
+        throw new CloudChatError(`GetChatMessage stream was idle for ${idleMs}ms`, { code: "idle_timeout", url })
       }
       if (done) break
       if (value) {
@@ -537,7 +674,10 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
           try {
             payload = zlib.gunzipSync(raw)
           } catch (cause) {
-            throw new CloudChatError(`Connect frame gunzip failed: ${(cause as Error).message}`)
+            throw new CloudChatError(`Connect frame gunzip failed: ${(cause as Error).message}`, {
+              code: "invalid_frame",
+              url,
+            })
           }
         }
         if ((flags & 0x02) !== 0) {
@@ -564,6 +704,7 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
     }
   } finally {
     if (idleTimer) clearTimeout(idleTimer)
+    request.signal?.removeEventListener("abort", onAbort)
     // Cancel before releasing: releasing first would detach the reader, after
     // which the body can no longer be cancelled at all.
     await cancelBody("stream finished")
@@ -579,16 +720,25 @@ export async function* streamChatEvents(request: StreamChatRequest): AsyncGenera
     if (isOpaque) {
       throw new CloudChatError(
         `Cognition denied model access for "${request.modelUid}". Check your account tier. (trace: ${trailerError.traceId ?? "n/a"})`,
-        trailerError.code,
-        trailerError.traceId,
+        { code: trailerError.code, traceId: trailerError.traceId, url },
       )
     }
     // A token the server rejected mid-stream is just as stale as a 401: the
     // account may have been reconnected between minting and streaming.
-    if (isAuthFailure(trailerError.code)) clearCachedUserJwt()
-    throw new CloudChatError(trailerError.message, trailerError.code, trailerError.traceId)
+    const staleToken = isAuthFailure(trailerError.code)
+    if (staleToken) clearCachedUserJwt()
+    throw new CloudChatError(trailerError.message, {
+      code: trailerError.code,
+      traceId: trailerError.traceId,
+      url,
+      retryWithFreshToken: staleToken,
+      ...(staleToken ? { status: 401 } : {}),
+    })
   }
   if (!sawEos) {
-    throw new CloudChatError("Cloud stream ended without EOS trailer. Connection likely dropped.", "truncated_stream")
+    throw new CloudChatError("Cloud stream ended without EOS trailer. Connection likely dropped.", {
+      code: "truncated_stream",
+      url,
+    })
   }
 }

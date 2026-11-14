@@ -17,9 +17,17 @@ import type {
   LanguageModelV3GenerateResult,
   LanguageModelV3Prompt,
   LanguageModelV3StreamPart,
+  LanguageModelV3ToolResultOutput,
   LanguageModelV3Usage,
+  SharedV3Warning,
 } from "@ai-sdk/provider"
-import { streamChatEvents, type ChatEvent, type ChatHistoryItem, type ChatToolDefinition } from "./chat.ts"
+import {
+  streamChatEvents,
+  type ChatEvent,
+  type ChatHistoryItem,
+  type ChatToolChoice,
+  type ChatToolDefinition,
+} from "./chat.ts"
 import {
   getCachedCatalog,
   ModelNotAvailableError,
@@ -54,24 +62,97 @@ export function resolveEffortUid(
 
 // --- Prompt conversion: LanguageModelV3Prompt → ChatHistoryItem[] ---
 
-function convertPrompt(prompt: LanguageModelV3Prompt): ChatHistoryItem[] {
+type ContentParts = Exclude<ChatHistoryItem["content"], string>
+
+/** Base64 payload of a file part, or `undefined` when it is not inline data. */
+function inlineBase64(data: unknown): string | undefined {
+  if (data instanceof Uint8Array) return Buffer.from(data).toString("base64")
+  if (typeof data !== "string") return undefined
+  const dataUrl = /^data:[^,]*;base64,(.*)$/s.exec(data)
+  if (dataUrl) return dataUrl[1]
+  return /^[a-z][a-z0-9+.-]*:/i.test(data) ? undefined : data
+}
+
+/**
+ * Cascade carries images and nothing else. Anything else is replaced by a
+ * note, so the model can say the attachment is missing instead of answering as
+ * if it had never been sent, and is reported to the caller as a warning.
+ */
+function pushFile(
+  parts: ContentParts,
+  warnings: SharedV3Warning[],
+  file: { mediaType: string; data: unknown; filename?: string },
+): void {
+  const base64 = file.mediaType.startsWith("image/") ? inlineBase64(file.data) : undefined
+  if (base64 !== undefined) {
+    parts.push({ type: "image", mimeType: file.mediaType, base64Data: base64 })
+    return
+  }
+  const what = file.filename ? `${file.mediaType} file "${file.filename}"` : `${file.mediaType} file`
+  const why = file.mediaType.startsWith("image/") ? "only inline image data can be sent" : "only images can be sent"
+  parts.push({ type: "text", text: `[Attachment omitted: ${what}. The Devin provider could not send it; ${why}.]` })
+  warnings.push({ type: "unsupported", feature: `${file.mediaType} file input`, details: `Omitted: ${why}.` })
+}
+
+/**
+ * Flatten a tool result to what the model should read.
+ *
+ * The output is a tagged union, not the content itself: serialising it whole
+ * sends the model `{"type":"text","value":"line1\\nline2"}` in place of the two
+ * lines, which costs tokens on every tool call and is harder to read.
+ */
+function convertToolOutput(
+  output: LanguageModelV3ToolResultOutput,
+  warnings: SharedV3Warning[],
+): { content: ContentParts; isError: boolean } {
+  const text = (value: string): ContentParts => [{ type: "text", text: value }]
+  switch (output.type) {
+    case "text":
+      return { content: text(output.value), isError: false }
+    case "json":
+      return { content: text(JSON.stringify(output.value)), isError: false }
+    case "error-text":
+      return { content: text(output.value), isError: true }
+    case "error-json":
+      return { content: text(JSON.stringify(output.value)), isError: true }
+    case "execution-denied":
+      return {
+        content: text(output.reason ? `Tool execution was denied: ${output.reason}` : "Tool execution was denied."),
+        isError: true,
+      }
+    case "content": {
+      const content: ContentParts = []
+      for (const part of output.value) {
+        if (part.type === "text") content.push({ type: "text", text: part.text })
+        else if (part.type === "image-data" || part.type === "file-data") pushFile(content, warnings, part)
+        else {
+          content.push({ type: "text", text: `[Attachment omitted: the Devin provider cannot send a ${part.type} part.]` })
+          warnings.push({ type: "unsupported", feature: `${part.type} tool output` })
+        }
+      }
+      return { content, isError: false }
+    }
+    default:
+      return { content: text(JSON.stringify(output)), isError: false }
+  }
+}
+
+/** Exported for tests. */
+export function convertPrompt(prompt: LanguageModelV3Prompt): { messages: ChatHistoryItem[]; warnings: SharedV3Warning[] } {
   const items: ChatHistoryItem[] = []
+  const warnings: SharedV3Warning[] = []
   for (const message of prompt) {
     if (message.role === "system") {
       items.push({ role: "system", content: message.content })
     } else if (message.role === "user") {
-      const parts: Exclude<ChatHistoryItem["content"], string> = []
+      const parts: ContentParts = []
       for (const part of message.content) {
-        if (part.type === "text") {
-          parts.push({ type: "text", text: part.text })
-        } else if (part.type === "file" && part.mediaType.startsWith("image/") && typeof part.data !== "object") {
-          const data = typeof part.data === "string" ? part.data : Buffer.from(part.data).toString("base64")
-          parts.push({ type: "image", mimeType: part.mediaType, base64Data: data })
-        }
+        if (part.type === "text") parts.push({ type: "text", text: part.text })
+        else if (part.type === "file") pushFile(parts, warnings, part)
       }
       items.push({ role: "user", content: parts })
     } else if (message.role === "assistant") {
-      const parts: Exclude<ChatHistoryItem["content"], string> = []
+      const parts: ContentParts = []
       const toolCalls: ChatHistoryItem["tool_calls"] = []
       for (const part of message.content) {
         if (part.type === "text") {
@@ -88,14 +169,53 @@ function convertPrompt(prompt: LanguageModelV3Prompt): ChatHistoryItem[] {
     } else if (message.role === "tool") {
       for (const part of message.content) {
         if (part.type === "tool-result") {
-          const output = typeof part.output === "string" ? part.output : JSON.stringify(part.output)
-          items.push({ role: "tool", content: output, tool_call_id: part.toolCallId })
+          const { content, isError } = convertToolOutput(part.output, warnings)
+          items.push({
+            role: "tool",
+            content,
+            tool_call_id: part.toolCallId,
+            ...(isError ? { is_error: true } : {}),
+          })
         }
       }
     }
   }
-  return items
+  return { messages: items, warnings }
 }
+
+/**
+ * Cascade reports uncached input, cache reads and cache writes as separate
+ * counts: against the live API a repeated 165k-token prompt came back as
+ * `input_tokens=4, cached_input_tokens=165031`. The total is their sum, and
+ * `promptTokens` is already the uncached share.
+ */
+function toUsage(event: Extract<ChatEvent, { kind: "usage" }>): LanguageModelV3Usage {
+  const { promptTokens, cachedInputTokens, cacheCreationInputTokens, completionTokens, reasoningTokens } = event
+  return {
+    inputTokens: {
+      total:
+        promptTokens === undefined
+          ? undefined
+          : promptTokens + (cachedInputTokens ?? 0) + (cacheCreationInputTokens ?? 0),
+      noCache: promptTokens,
+      cacheRead: cachedInputTokens,
+      cacheWrite: cacheCreationInputTokens,
+    },
+    outputTokens: {
+      total: completionTokens,
+      text:
+        completionTokens !== undefined && reasoningTokens !== undefined ? completionTokens - reasoningTokens : undefined,
+      reasoning: reasoningTokens,
+    },
+  }
+}
+
+/**
+ * Some upstream models end a turn that made tool calls with a plain stop, or
+ * with no stop reason at all. The caller has to run the tools either way.
+ */
+const finishReasonFor = (reason: string, madeToolCalls: boolean): string =>
+  madeToolCalls && reason === "stop" ? "tool_calls" : reason
 
 function convertTools(tools: LanguageModelV3CallOptions["tools"]): ChatToolDefinition[] | undefined {
   if (!tools || tools.length === 0) return undefined
@@ -137,6 +257,7 @@ const TICK = Symbol("coalesce-tick")
 export async function* convertStreamEvents(
   events: AsyncGenerator<ChatEvent>,
   generateId: () => string,
+  warnings: SharedV3Warning[] = [],
 ): AsyncGenerator<LanguageModelV3StreamPart> {
   let textId = ""
   let reasoningId = ""
@@ -156,6 +277,7 @@ export async function* convertStreamEvents(
   const openTools = new Map<string, { name: string; args: string }>()
   // Deltas that carry no id belong to the most recently opened call.
   let lastToolId = ""
+  let madeToolCalls = false
 
   const pendingDeltas = (): LanguageModelV3StreamPart[] => {
     const parts: LanguageModelV3StreamPart[] = []
@@ -185,9 +307,11 @@ export async function* convertStreamEvents(
 
   // The protocol has no end-of-tool-call marker, so a call cannot be completed
   // until the stream ends. They are emitted in the order they were started.
+  // The arguments themselves are streamed as they arrive, see `tool_call_args`.
   const completedToolCalls = (): LanguageModelV3StreamPart[] => {
     const parts: LanguageModelV3StreamPart[] = []
     for (const [id, tool] of openTools) {
+      parts.push({ type: "tool-input-end", id })
       parts.push({ type: "tool-call", toolCallId: id, toolName: tool.name, input: tool.args })
     }
     openTools.clear()
@@ -262,17 +386,27 @@ export async function* convertStreamEvents(
         parts.push(...pendingDeltas())
         parts.push(...closeBlocks())
         const id = event.id || generateId()
-        const open = openTools.get(id)
-        if (open) open.name = event.name
-        else openTools.set(id, { name: event.name, args: "" })
+        // A repeated start keeps the first name: the call was already announced
+        // under it, and a host rejects a call whose name changes midway.
+        if (!openTools.has(id)) {
+          openTools.set(id, { name: event.name, args: "" })
+          madeToolCalls = true
+          parts.push({ type: "tool-input-start", id, toolName: event.name })
+        }
         lastToolId = id
         break
       }
       case "tool_call_args": {
-        const open = openTools.get(event.id ?? lastToolId)
+        const id = event.id ?? lastToolId
+        const open = openTools.get(id)
         // An orphan delta has no call to attach to; dropping it beats inventing
         // a nameless tool call.
-        if (open) open.args += event.argsDelta
+        if (open && event.argsDelta) {
+          open.args += event.argsDelta
+          // Streamed so a long call, such as writing a file, shows progress
+          // instead of looking stalled until the whole turn has arrived.
+          parts.push({ type: "tool-input-delta", id, delta: event.argsDelta })
+        }
         break
       }
       case "finish": {
@@ -282,25 +416,7 @@ export async function* convertStreamEvents(
         break
       }
       case "usage": {
-        usage = {
-          inputTokens: {
-            total: event.promptTokens,
-            noCache:
-              event.promptTokens !== undefined && event.cachedInputTokens !== undefined
-                ? event.promptTokens - event.cachedInputTokens
-                : undefined,
-            cacheRead: event.cachedInputTokens,
-            cacheWrite: event.cacheCreationInputTokens,
-          },
-          outputTokens: {
-            total: event.completionTokens,
-            text:
-              event.completionTokens !== undefined && event.reasoningTokens !== undefined
-                ? event.completionTokens - event.reasoningTokens
-                : undefined,
-            reasoning: event.reasoningTokens,
-          },
-        }
+        usage = toUsage(event)
         break
       }
     }
@@ -331,7 +447,7 @@ export async function* convertStreamEvents(
   const nextStep = (): Promise<IteratorResult<ChatEvent> | typeof TICK> =>
     textBuf || reasoningBuf ? Promise.race([nextEvent(), tick()]) : nextEvent()
 
-  yield { type: "stream-start", warnings: [] }
+  yield { type: "stream-start", warnings }
 
   try {
     for (;;) {
@@ -360,6 +476,7 @@ export async function* convertStreamEvents(
   yield* closeBlocks()
   yield* completedToolCalls()
 
+  finishReason = finishReasonFor(finishReason, madeToolCalls)
   const rawReason = FINISH_REASON_MAP[finishReason] ?? "stop"
   yield {
     type: "finish",
@@ -419,19 +536,12 @@ export async function collectEvents(events: AsyncGenerator<ChatEvent>): Promise<
         result.finishReason = event.reason
         break
       case "usage":
-        result.usage = {
-          inputTokens: {
-            total: event.promptTokens,
-            noCache: undefined,
-            cacheRead: event.cachedInputTokens,
-            cacheWrite: event.cacheCreationInputTokens,
-          },
-          outputTokens: { total: event.completionTokens, text: undefined, reasoning: event.reasoningTokens },
-        }
+        result.usage = toUsage(event)
         break
     }
   }
   commit()
+  result.finishReason = finishReasonFor(result.finishReason, result.toolCalls.length > 0)
   return result
 }
 
@@ -501,15 +611,18 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
     checkModelUsable(options.modelId, catalog)
     const effortOverride = callOptions.providerOptions?.devin?.reasoningEffort
     const resolvedModelId = resolveEffortUid(options.modelId, catalog?.enabled, effortOverride)
+    const { messages, warnings } = convertPrompt(callOptions.prompt)
     return {
       resolvedModelId,
+      warnings,
       knownToCatalog: isKnownToCatalog(options.modelId, catalog),
       events: streamChatEvents({
         apiKey: options.apiKey,
         apiServerUrl: options.apiServerUrl,
         modelUid: resolvedModelId,
-        messages: convertPrompt(callOptions.prompt),
+        messages,
         tools: convertTools(callOptions.tools),
+        toolChoice: callOptions.toolChoice as ChatToolChoice | undefined,
         completionOpts: {
           maxOutputTokens: callOptions.maxOutputTokens,
           temperature: callOptions.temperature,
@@ -527,7 +640,7 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
     modelId: options.modelId,
     supportedUrls: {},
     async doGenerate(callOptions): Promise<LanguageModelV3GenerateResult> {
-      const { events, knownToCatalog } = await run(callOptions, callOptions.abortSignal)
+      const { events, knownToCatalog, warnings } = await run(callOptions, callOptions.abortSignal)
       const collected = await collectEvents(events).catch((cause: unknown) => {
         throw hintUnlistedModel(cause, options.modelId, knownToCatalog)
       })
@@ -544,7 +657,7 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
           raw: collected.finishReason,
         },
         usage: collected.usage ?? DEFAULT_USAGE,
-        warnings: [],
+        warnings,
       }
     },
     async doStream(callOptions) {
@@ -554,9 +667,9 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
       const signal = callOptions.abortSignal
         ? AbortSignal.any([callOptions.abortSignal, abort.signal])
         : abort.signal
-      const { events, knownToCatalog } = await run(callOptions, signal)
+      const { events, knownToCatalog, warnings } = await run(callOptions, signal)
       const generateId = () => crypto.randomUUID()
-      const generator = convertStreamEvents(events, generateId)
+      const generator = convertStreamEvents(events, generateId, warnings)
       const modelId = options.modelId
       let cancelled = false
       const stream = new ReadableStream<LanguageModelV3StreamPart>({
