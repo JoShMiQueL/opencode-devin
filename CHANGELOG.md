@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.2](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.1...v0.2.2) (2026-11-15)
+
+
+### Features
+
+* switch reasoning effort with model variants instead of separate models ([#15](https://github.com/JoShMiQueL/opencode-devin/issues/15)) ([915e434](https://github.com/JoShMiQueL/opencode-devin/commit/915e434248450d425be36846dc0f6715cba123ef))
+
+
+### Bug Fixes
+
+* stop the 60s stream cut-off and correct tool results, errors and tool choice ([#14](https://github.com/JoShMiQueL/opencode-devin/issues/14)) ([376961e](https://github.com/JoShMiQueL/opencode-devin/commit/376961ee8af564b7389d46eb3876bdb8612f3221))
+
 ## [0.2.1](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.0...v0.2.1) (2026-10-27)
 
 
