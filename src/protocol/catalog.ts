@@ -10,7 +10,7 @@ import { APICallError } from "@ai-sdk/provider"
 import { encodeMessage, iterFields } from "./wire.ts"
 import { buildMetadata } from "./metadata.ts"
 import { clearCachedUserJwt, credentialKey, getCachedUserJwt } from "./auth.ts"
-import { splitEffortSuffix } from "./effort.ts"
+import { effortFromLabel, splitEffortSuffix } from "./effort.ts"
 import { DEFAULT_API_SERVER } from "../constants.ts"
 
 const CATALOG_TTL_MS = 10 * 60 * 1000
@@ -40,9 +40,12 @@ export interface ModelCatalogEntry {
   contextWindow: number
   pricing?: ModelPricing
   capabilities?: ModelCapability[]
-  /** Base model UID without the effort suffix (e.g. "claude-opus-4-8" for "claude-opus-4-8-medium"). */
+  /** Model UID without its effort (e.g. "claude-opus-4-8" for "claude-opus-4-8-medium"). */
   baseModelUid?: string
-  /** Reasoning effort level if encoded in the UID (none/low/medium/high/xhigh/max). */
+  /**
+   * Reasoning effort this UID runs at: read from the UID, or from the "Effort"
+   * capability when the UID names none (`glm-5-2` is GLM-5.2 at high).
+   */
   effortLevel?: string
 }
 
@@ -145,7 +148,9 @@ function decodeModelConfig(buf: Buffer): ModelCatalogEntry | undefined {
     } else if (field.num === 22 && field.wire === 2 && Buffer.isBuffer(field.value)) {
       modelUid = field.value.toString("utf8")
     } else if (field.num === 30 && field.wire === 2 && Buffer.isBuffer(field.value)) {
-      // Capabilities message: #1 display name, #2 (repeated) feature { #1 name, #2 { #1 enabled, #2 value } }
+      // Capabilities message: #1 display name, #2 (repeated) feature
+      // { #1 name, #2 state { #1 level, #2 value } }. The level is 1 for an
+      // on/off feature that is on, and the rank of the effort for "Effort".
       capabilities = []
       for (const feature of iterFields(field.value)) {
         if (feature.num !== 2 || feature.wire !== 2 || !Buffer.isBuffer(feature.value)) continue
@@ -155,10 +160,15 @@ function decodeModelConfig(buf: Buffer): ModelCatalogEntry | undefined {
         for (const part of iterFields(feature.value)) {
           if (part.num === 1 && part.wire === 2 && Buffer.isBuffer(part.value)) {
             name = part.value.toString("utf8")
-          } else if (part.num === 1 && part.wire === 0) {
-            enabled = part.value === 1n
           } else if (part.num === 2 && part.wire === 2 && Buffer.isBuffer(part.value)) {
-            value = part.value.toString("utf8")
+            // The state is a nested message. Reading it as a string, as this
+            // used to, yielded its raw bytes and never set `enabled`.
+            for (const state of iterFields(part.value)) {
+              if (state.num === 1 && state.wire === 0) enabled = state.value !== 0n
+              else if (state.num === 2 && state.wire === 2 && Buffer.isBuffer(state.value)) {
+                value = state.value.toString("utf8")
+              }
+            }
           }
         }
         if (name) capabilities.push({ name, enabled, value })
@@ -204,7 +214,10 @@ function decodeModelConfig(buf: Buffer): ModelCatalogEntry | undefined {
   }
 
   if (modelUid.length === 0) return undefined
-  const { baseModelUid, effortLevel } = splitEffortSuffix(modelUid)
+  const split = splitEffortSuffix(modelUid)
+  const baseModelUid = split.baseModelUid
+  const effortLevel =
+    split.effortLevel ?? effortFromLabel(capabilities?.find((capability) => /^(reasoning )?effort$/i.test(capability.name))?.value)
   return {
     modelUid,
     label: label || modelUid,

@@ -34,13 +34,16 @@ import {
   type CatalogSnapshot,
   type ModelCatalogEntry,
 } from "./catalog.ts"
-import { splitEffortSuffix, toEffortLevel, withEffortSuffix } from "./effort.ts"
+import { defaultMember, splitEffortSuffix, toEffortLevel, withEffortSuffix } from "./effort.ts"
 import { DEFAULT_API_SERVER } from "../constants.ts"
 
 /**
- * Resolve the actual model UID to send upstream, applying an optional
- * reasoning-effort override from providerOptions: swap an existing effort
- * suffix, or append one when the catalog lists that variant.
+ * Resolve the model UID to send upstream.
+ *
+ * A model is published once per family, under its UID without the effort, and
+ * the effort arrives as `providerOptions.devin.reasoningEffort` from the
+ * variant the user picked. Upstream has no effort parameter: each effort is a
+ * separate UID, so the choice is made here.
  *
  * Exported for tests: this is what the catalog lookup exists for, so it needs
  * to stay covered independently of the network.
@@ -51,13 +54,18 @@ export function resolveEffortUid(
   requestedEffort: unknown,
 ): string {
   const effort = toEffortLevel(requestedEffort)
-  if (!effort) return modelId
-  const split = splitEffortSuffix(modelId)
-  if (split.effortLevel) return withEffortSuffix(split.baseModelUid, effort)
-  if (catalog?.some((entry) => entry.baseModelUid === modelId && entry.effortLevel === effort)) {
-    return withEffortSuffix(modelId, effort)
+  const self = splitEffortSuffix(modelId)
+  const family = catalog?.filter((entry) => (entry.baseModelUid ?? entry.modelUid) === self.baseModelUid) ?? []
+  if (effort) {
+    const match = family.find((entry) => entry.effortLevel === effort)
+    if (match) return match.modelUid
+    // The catalog is not a contract, so an effort it does not list is still
+    // tried on a UID that already carries one.
+    if (self.effortLevel) return withEffortSuffix(modelId, effort)
   }
-  return modelId
+  if (!catalog || catalog.some((entry) => entry.modelUid === modelId)) return modelId
+  // A family id that is not itself a UID, e.g. `claude-opus-5-5`.
+  return defaultMember(family)?.modelUid ?? modelId
 }
 
 // --- Prompt conversion: LanguageModelV3Prompt → ChatHistoryItem[] ---
@@ -608,14 +616,15 @@ function hintUnlistedModel(cause: unknown, modelId: string, known: boolean | und
 function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
   const run = async (callOptions: LanguageModelV3CallOptions, signal: AbortSignal | undefined) => {
     const catalog = await options.loadCatalog()
-    checkModelUsable(options.modelId, catalog)
     const effortOverride = callOptions.providerOptions?.devin?.reasoningEffort
     const resolvedModelId = resolveEffortUid(options.modelId, catalog?.enabled, effortOverride)
+    // Checked on the UID that is sent: a family id is not a UID of its own.
+    checkModelUsable(resolvedModelId, catalog)
     const { messages, warnings } = convertPrompt(callOptions.prompt)
     return {
       resolvedModelId,
       warnings,
-      knownToCatalog: isKnownToCatalog(options.modelId, catalog),
+      knownToCatalog: isKnownToCatalog(resolvedModelId, catalog),
       events: streamChatEvents({
         apiKey: options.apiKey,
         apiServerUrl: options.apiServerUrl,

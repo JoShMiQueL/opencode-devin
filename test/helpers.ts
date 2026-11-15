@@ -37,15 +37,36 @@ export const pricingMessage = (type: string, price: number, factor: number, cred
 /** One `ModelConfig` message, per the field numbers the catalog decoder reads. */
 export const modelConfig = (
   modelUid: string,
-  opts: { label?: string; disabled?: boolean; pricing?: Buffer[] } = {},
+  opts: { label?: string; disabled?: boolean; pricing?: Buffer[]; capabilities?: Buffer[] } = {},
 ) =>
   Buffer.concat([
     encodeString(1, opts.label ?? modelUid),
     encodeVarintField(4, opts.disabled ? 1 : 0),
     encodeVarintField(18, 200_000),
     encodeString(22, modelUid),
+    ...(opts.capabilities ? [encodeMessage(30, Buffer.concat(opts.capabilities))] : []),
     ...(opts.pricing ?? []).map((p) => encodeMessage(32, p)),
   ])
+
+/**
+ * One feature of the capabilities message (field #30 of ModelConfig), as
+ * observed live: `{ #1 name, #2 state { #1 level, #2 value, #3 kind } }`.
+ */
+export const capability = (name: string, state: { level?: number; value?: string } = {}) =>
+  encodeMessage(
+    2,
+    Buffer.concat([
+      encodeString(1, name),
+      encodeMessage(
+        2,
+        Buffer.concat([
+          ...(state.level ? [encodeVarintField(1, state.level)] : []),
+          ...(state.value ? [encodeString(2, state.value)] : []),
+          encodeVarintField(3, 1),
+        ]),
+      ),
+    ]),
+  )
 
 /** `GetCascadeModelConfigs` reply: field 1, repeated ModelConfig. */
 export const catalogReply = (configs: Buffer[]) =>
