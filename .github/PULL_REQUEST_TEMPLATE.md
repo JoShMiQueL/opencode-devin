@@ -1,3 +1,5 @@
+<!-- Write the title, body and commit messages in English - see AGENTS.md. -->
+
 ## What
 
 One or two sentences. What changes for a user?
