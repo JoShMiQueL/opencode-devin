@@ -1,9 +1,10 @@
 # devin-* ecosystem — shared-core architecture
 
-Working area for the refactor. Six repos, two shared libraries, three
-products plus orchestration. All public, npm-public naming, no GitHub org
+Working area for the refactor. Five repos, two shared libraries, three
+products. All public, npm-public naming, no GitHub org
 (repos stay under the personal account with the `devin-*` prefix + topic
-`devin-ecosystem` to group them).
+`devin-ecosystem` to group them). `agentic-harness` is out of scope — it
+orchestrates CLIs, not the protocol.
 
 ## Naming map (npm + GitHub, all verified free)
 
@@ -14,7 +15,6 @@ products plus orchestration. All public, npm-public naming, no GitHub org
 | `devin-proxy` | = | free | product: standalone OpenAI-compat proxy |
 | `devin-opencode` | `opencode-devin` | taken | product: opencode v2 plugin |
 | `devin-claude` | `claude-devin` | free | product: Claude surface / proxy |
-| `devin-agents` | `agentic-harness` | free | product: multi-agent orchestration |
 
 `cascade-core` was taken on npm → family settled on `devin-*`.
 
@@ -28,8 +28,6 @@ devin-core  (wire·metadata·catalog·auth·pkce·chat·effort·contract.json)
     │        ├──> devin-proxy    HTTP :8390/v1 + CLI + supervisor
     │        ├──> devin-opencode in-process engine (flag: uncensored)
     │        └──> devin-claude   in-process engine, Anthropic surface
-    │
-    └──> devin-agents   orchestration, consumes core for catalog/auth
 ```
 
 `devin-engine` is a **class, not a server** — the plugins import it
@@ -72,6 +70,6 @@ is stable, and `contract.json` catches upstream changes in CI.
 
 ## Renames queued
 
-`opencode-devin` → `devin-opencode`, `claude-devin` → `devin-claude`,
-`agentic-harness` → `devin-agents`. GitHub keeps redirects; the npm side
-needs a fresh publish under the new name (old name deprecates).
+`opencode-devin` → `devin-opencode`, `claude-devin` → `devin-claude`.
+GitHub keeps redirects; the npm side needs a fresh publish under the new
+name (old name deprecates).
