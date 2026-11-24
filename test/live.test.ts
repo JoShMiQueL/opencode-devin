@@ -29,8 +29,8 @@ if (!RUN_LIVE) {
 
 describe("live Cascade API", () => {
   maybe("mints a user_jwt and reads a non-empty model catalog", async () => {
-    const { mintUserJwt } = await import("../src/protocol/auth.ts")
-    const { getCachedCatalog } = await import("../src/protocol/catalog.ts")
+    const { mintUserJwt } = await import("devin-core")
+    const { getCachedCatalog } = await import("devin-core")
 
     const { jwt, expiresAt } = await mintUserJwt(API_KEY!, HOST)
     expect(jwt.split(".")).toHaveLength(3)
@@ -64,11 +64,11 @@ describe("live Cascade API", () => {
   }, 60_000)
 
   maybe("streams a chat completion end to end", async () => {
-    const { streamChatEvents } = await import("../src/protocol/chat.ts")
+    const { streamChatEvents } = await import("devin-core")
     const { createDevinProvider } = await import("../src/provider.ts")
 
     const sdk = createDevinProvider({ apiKey: API_KEY!, baseURL: HOST })
-    const catalog = await import("../src/protocol/catalog.ts").then((m) =>
+    const catalog = await import("devin-core").then((m) =>
       m.getCachedCatalog(API_KEY!, HOST),
     )
     const modelId = [...catalog!.byUid.values()].find((e) => !e.disabled)?.modelUid

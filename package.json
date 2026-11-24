@@ -46,7 +46,8 @@
   "bugs": "https://github.com/JoShMiQueL/opencode-devin/issues",
   "dependencies": {
     "@ai-sdk/provider": "3.0.8",
-    "@opencode/plugin": "2.0.16"
+    "@opencode/plugin": "2.0.16",
+    "devin-core": "file:../devin-core"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",

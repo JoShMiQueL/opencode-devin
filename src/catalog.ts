@@ -16,8 +16,8 @@
  * favourite or a session that names `devin/claude-opus-5-5-high` keeps working.
  */
 
-import { getCachedCatalog, type ModelCatalogEntry } from "./protocol/catalog.ts"
-import { defaultMember, EFFORT_LEVELS, toEffortLevel } from "./protocol/effort.ts"
+import { getCachedCatalog, type ModelCatalogEntry } from "devin-core"
+import { defaultMember, EFFORT_LEVELS, toEffortLevel } from "devin-core"
 import { Model, Provider } from "@opencode/plugin"
 import { DEFAULT_RELEASED_MS, PROVIDER_ID } from "./constants.ts"
 

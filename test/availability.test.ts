@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { clearCachedUserJwt } from "../src/protocol/auth.ts"
+import { clearCachedUserJwt } from "devin-core"
 import { createDevin } from "../src/protocol/model.ts"
-import { ModelNotAvailableError } from "../src/protocol/catalog.ts"
+import { ModelNotAvailableError } from "devin-core"
 import { catalogReply, modelConfig, silenceWarn, stubFetch, uniqueHost as host, realFetch } from "./helpers.ts"
 
 const API_KEY = "devin-session-token$availability"

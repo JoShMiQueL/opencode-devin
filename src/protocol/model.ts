@@ -27,14 +27,14 @@ import {
   type ChatHistoryItem,
   type ChatToolChoice,
   type ChatToolDefinition,
-} from "./chat.ts"
+} from "devin-core"
 import {
   getCachedCatalog,
   ModelNotAvailableError,
   type CatalogSnapshot,
   type ModelCatalogEntry,
-} from "./catalog.ts"
-import { defaultMember, splitEffortSuffix, toEffortLevel, withEffortSuffix } from "./effort.ts"
+} from "devin-core"
+import { defaultMember, splitEffortSuffix, toEffortLevel, withEffortSuffix } from "devin-core"
 import { DEFAULT_API_SERVER } from "../constants.ts"
 
 /**

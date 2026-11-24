@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { collectEvents, convertStreamEvents, resolveEffortUid } from "../src/protocol/model.ts"
-import { splitEffortSuffix } from "../src/protocol/effort.ts"
-import type { ChatEvent } from "../src/protocol/chat.ts"
-import type { ModelCatalogEntry } from "../src/protocol/catalog.ts"
+import { splitEffortSuffix } from "devin-core"
+import type { ChatEvent } from "devin-core"
+import type { ModelCatalogEntry } from "devin-core"
 
 const stream = (...events: ChatEvent[]) =>
   (async function* () {

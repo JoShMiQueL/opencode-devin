@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { startCallbackServer } from "../src/auth/loopback.ts"
+import { startCallbackServer } from "devin-core"
 import { resolveCredentials, toStoredCredential } from "../src/credentials.ts"
 import { CALLBACK_PATH } from "../src/constants.ts"
 

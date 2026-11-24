@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import * as zlib from "node:zlib"
 import { toModelInfos } from "../src/catalog.ts"
-import { clearCachedUserJwt } from "../src/protocol/auth.ts"
-import { getCachedCatalog, type ModelCatalogEntry } from "../src/protocol/catalog.ts"
+import { clearCachedUserJwt } from "devin-core"
+import { getCachedCatalog, type ModelCatalogEntry } from "devin-core"
 import { createDevin } from "../src/protocol/model.ts"
-import { encodeString, iterFields } from "../src/protocol/wire.ts"
+import { encodeString, iterFields } from "devin-core"
 import { capability, catalogReply, inSeconds, jwt, modelConfig, realFetch, stubFetch, uniqueHost } from "./helpers.ts"
 
 const API_KEY = "devin-session-token$variants"

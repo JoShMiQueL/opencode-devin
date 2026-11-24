@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { LanguageModelV3Prompt } from "@ai-sdk/provider"
 import { collectEvents, convertPrompt, convertStreamEvents } from "../src/protocol/model.ts"
-import type { ChatEvent } from "../src/protocol/chat.ts"
+import type { ChatEvent } from "devin-core"
 
 const stream = (...events: ChatEvent[]) =>
   (async function* () {
