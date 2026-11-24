@@ -87,8 +87,10 @@ is stable, and `contract.json` catches upstream changes in CI.
 - [x] npm publish: devin-core@0.0.3, devin-engine@0.0.3, devin-proxy@0.1.1
 - [x] renames: devin-proxy = TS, Python → devin-proxy-py
 - [x] OIDC Trusted Publishing on all 3 packages (publish.yml workflow)
-- [ ] merge claude-devin develop → main (release-please flow)
-- [ ] decide devin-proxy-py fate: keep as reference / archive
+- [x] claude-devin develop → main merged (#28); release PR #29 open
+- [x] devin-proxy-py archived (superseded notice in README)
+- [x] normal/uncensored mode toggle: EngineSettings.mode (engine 0.0.4),
+      devin-proxy `--mode`/`DEVIN_PROXY_MODE`/settings.toml (proxy 0.2.0)
 
 ## Renames done
 
