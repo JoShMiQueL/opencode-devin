@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { convertStreamEvents } from "../src/protocol/model.ts"
-import type { ChatEvent } from "../src/protocol/chat.ts"
+import type { ChatEvent } from "devin-core"
 
 /**
  * The stream is woken by a timer as well as by upstream events. These tests pin

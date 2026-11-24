@@ -8,8 +8,8 @@ import {
   encodeVarintField,
   frameConnectStream,
   iterFields,
-} from "../src/protocol/wire.ts"
-import { buildMetadata } from "../src/protocol/metadata.ts"
+} from "devin-core"
+import { buildMetadata } from "devin-core"
 
 /**
  * Cross-validation against an independent protobuf implementation.

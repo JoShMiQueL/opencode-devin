@@ -15,8 +15,8 @@
 import { Plugin, Provider } from "@opencode/plugin"
 import { DEFAULT_API_SERVER, LLM_ENV_VAR, PROVIDER_ID } from "./constants.ts"
 import { resolveCredentials, toStoredCredential } from "./credentials.ts"
-import { openBrowser } from "./auth/browser.ts"
-import { loginAuto, loginManual } from "./auth/login.ts"
+import { openBrowser } from "devin-core"
+import { loginAuto, loginManual } from "devin-core"
 import { fetchModels } from "./catalog.ts"
 
 export { createDevinProvider } from "./provider.ts"

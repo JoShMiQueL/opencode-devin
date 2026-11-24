@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { clearCachedUserJwt } from "../src/protocol/auth.ts"
-import { CloudChatError, streamChatEvents, type ChatEvent } from "../src/protocol/chat.ts"
-import { encodeString } from "../src/protocol/wire.ts"
+import { clearCachedUserJwt } from "devin-core"
+import { CloudChatError, streamChatEvents, type ChatEvent } from "devin-core"
+import { encodeString } from "devin-core"
 import { inSeconds, jwt, realFetch, uniqueHost } from "./helpers.ts"
 
 const API_KEY = "devin-session-token$timeout"

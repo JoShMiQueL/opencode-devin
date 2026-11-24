@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { clearCachedUserJwt } from "../src/protocol/auth.ts"
+import { clearCachedUserJwt } from "devin-core"
 import { createDevin } from "../src/protocol/model.ts"
-import { encodeMessage, encodeString, encodeVarintField } from "../src/protocol/wire.ts"
+import { encodeMessage, encodeString, encodeVarintField } from "devin-core"
 
 const API_KEY = "devin-session-token$stream"
 const realFetch = globalThis.fetch

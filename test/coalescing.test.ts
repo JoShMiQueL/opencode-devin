@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { convertStreamEvents } from "../src/protocol/model.ts"
-import type { ChatEvent } from "../src/protocol/chat.ts"
+import type { ChatEvent } from "devin-core"
 
 const stream = (...events: ChatEvent[]) =>
   (async function* () {

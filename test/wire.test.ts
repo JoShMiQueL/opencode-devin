@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { encodeMessage, encodeString, encodeVarint, encodeVarintField, frameConnectStream, iterFields } from "../src/protocol/wire.ts"
-import { buildMetadata } from "../src/protocol/metadata.ts"
-import { generateState, generateVerifier, challengeFor } from "../src/auth/pkce.ts"
-import { authorizeUrl } from "../src/auth/url.ts"
+import { encodeMessage, encodeString, encodeVarint, encodeVarintField, frameConnectStream, iterFields } from "devin-core"
+import { buildMetadata } from "devin-core"
+import { generateState, generateVerifier, challengeFor } from "devin-core"
+import { authorizeUrl } from "devin-core"
 import { CALLBACK_PATH, TOKEN_PREFIX } from "../src/constants.ts"
 
 /** `ProtoField.value` is a discriminated pair; narrow it for nested decoding. */

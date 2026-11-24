@@ -10,8 +10,8 @@
  * Needs DEVIN_LLM_API_KEY for verify/test — either already exported, or read
  * back from .devin-token.env written by `login`.
  */
-import { loginAuto, loginManual } from "../src/auth/login.ts"
-import { openBrowser } from "../src/auth/browser.ts"
+import { loginAuto, loginManual } from "devin-core"
+import { openBrowser } from "devin-core"
 import { TOKEN_PREFIX } from "../src/constants.ts"
 
 const TOKEN_FILE = ".devin-token.env"

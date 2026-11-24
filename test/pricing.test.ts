@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { clearCachedUserJwt } from "../src/protocol/auth.ts"
-import { encodeString, encodeVarintField } from "../src/protocol/wire.ts"
+import { clearCachedUserJwt } from "devin-core"
+import { encodeString, encodeVarintField } from "devin-core"
 import { catalogReply, float32Field, modelConfig, pricingMessage, stubFetch, uniqueHost, realFetch } from "./helpers.ts"
 
 /**
@@ -28,7 +28,7 @@ afterEach(() => {
 
 const getPricing = async (modelUid: string, configs: Buffer[]) => {
   stubFetch({ catalog: () => new Response(catalogReply(configs), { status: 200 }) })
-  const { getCachedCatalog } = await import("../src/protocol/catalog.ts")
+  const { getCachedCatalog } = await import("devin-core")
   const catalog = await getCachedCatalog(API_KEY, uniqueHost())
   return catalog?.byUid.get(modelUid)?.pricing
 }
@@ -62,7 +62,7 @@ describe("pricing decode (field #32)", () => {
       }),
     ]
     stubFetch({ catalog: () => new Response(catalogReply(configs), { status: 200 }) })
-    const { getCachedCatalog } = await import("../src/protocol/catalog.ts")
+    const { getCachedCatalog } = await import("devin-core")
     const catalog = await getCachedCatalog(API_KEY, uniqueHost())
     expect(catalog?.byUid.get("cheap-model")?.pricing?.input).toBe(0.75)
     expect(catalog?.byUid.get("dear-model")?.pricing?.input).toBe(10)

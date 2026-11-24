@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { clearCachedUserJwt, credentialKey, getCachedUserJwt } from "../src/protocol/auth.ts"
-import { streamChatEvents } from "../src/protocol/chat.ts"
-import { encodeString } from "../src/protocol/wire.ts"
+import { clearCachedUserJwt, credentialKey, getCachedUserJwt } from "devin-core"
+import { streamChatEvents } from "devin-core"
+import { encodeString } from "devin-core"
 
 const HOST = "https://tenant.test"
 const API_KEY = "devin-session-token$test"

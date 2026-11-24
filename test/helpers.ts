@@ -3,7 +3,7 @@
  * and a fetch stub that serves them. Used by availability.test.ts and
  * pricing.test.ts.
  */
-import { encodeMessage, encodeString, encodeTag, encodeVarintField } from "../src/protocol/wire.ts"
+import { encodeMessage, encodeString, encodeTag, encodeVarintField } from "devin-core"
 
 export const realFetch = globalThis.fetch
 
