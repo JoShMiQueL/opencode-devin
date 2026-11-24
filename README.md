@@ -207,3 +207,16 @@ secret.
 ## License
 
 [MIT](LICENSE)
+
+## Ecosystem
+
+| Package | Role |
+| --- | --- |
+| `devin-core` | Cascade wire + PKCE auth + catalog — consumed here as `devin-core@^0.0.3` (replaces the old `src/protocol` + `src/auth`) |
+| `devin-engine` | guarded-retry pipeline (embeddable) |
+| `devin-proxy` | standalone OpenAI-compatible proxy |
+| `devin-proxy-py` | Python reference implementation |
+| **`opencode-devin`** (this) | OpenCode v2 plugin — `LanguageModelV3` adapter + `/connect` login |
+| `claude-devin` | Claude/Anthropic-compatible surface — same core |
+
+Topic `devin-ecosystem` groups the repos on GitHub.
