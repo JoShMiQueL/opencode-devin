@@ -36,6 +36,19 @@ devin-core  (wire·metadata·catalog·auth·pkce·chat·effort·contract.json)
 in-process and the standalone proxy wraps it in an HTTP listener. One
 implementation of the jailbreak/guard, three deliveries.
 
+### Why two packages, not one
+
+Decided: keep `devin-core` and `devin-engine` as separate packages —
+not for aesthetics, because they are different *categories* of code.
+`devin-core` is a neutral protocol library ("how to talk to the Devin
+backend") that any third party can depend on; `devin-engine` is the
+compliance layer — the jailbreak. Merged into one package (even via
+subpath exports), every consumer would pull the uncensored code into
+node_modules whether imported or not. Split, the jailbreak only exists
+in trees that explicitly `npm i devin-engine`. Drift between them is
+low-risk: the surface the engine consumes (chat stream, catalog, auth)
+is stable, and `contract.json` catches upstream changes in CI.
+
 ## Interconnection contract
 
 - `devin-core/contract.json` — golden catalog fixture; every consumer's
