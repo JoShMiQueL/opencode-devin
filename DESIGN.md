@@ -73,17 +73,28 @@ is stable, and `contract.json` catches upstream changes in CI.
 ## Refactor state
 
 - [x] decision log + naming (this file)
-- [x] devin-proxy: SWE-2.1 family routed (5 effort lanes)
-- [ ] devin-core: extract `src/protocol` + `src/auth` from devin-opencode,
-      reconcile the 4 divergent files vs devin-claude
-- [ ] rewire devin-opencode + devin-claude to import devin-core
-- [ ] devin-engine: port `devin_proxy/{pipeline,jailbreak,models}` to TS
-- [ ] devin-proxy: Python → TS over devin-engine (Python kept until parity)
-- [ ] cost/promo surfacing (`billingTag`, `/v1/models` fields, header)
-- [ ] renames + topics + ecosystem READMEs + npm publish
+- [x] devin-proxy (Python): SWE-2.1 family routed (5 effort lanes)
+- [x] devin-core: extracted `src/protocol` + `src/auth` from opencode-devin,
+      AI-SDK removed, node:http port, AI-SDK-compatible `DevinApiError` marker
+- [x] rewired opencode-devin (#19 merged, 156 tests) + claude-devin
+      (#26 merged to develop, 45 tests) to import `devin-core@^0.0.3`
+- [x] devin-engine: `devin_proxy/{pipeline,jailbreak,models}` ported to TS
+      (26 unit tests)
+- [x] devin-proxy: Python → TS over devin-engine, full parity —
+      chat/SSE/models/health/image_caption/web_search verified live
+- [x] cost/promo surfacing: `free_until`/`credits_per_run`/`free_tier` in
+      /v1/models + /health (GetCliModelConfigs fields 3/19/23)
+- [x] npm publish: devin-core@0.0.3, devin-engine@0.0.3, devin-proxy@0.1.1
+- [x] renames: devin-proxy = TS, Python → devin-proxy-py
+- [x] OIDC Trusted Publishing on all 3 packages (publish.yml workflow)
+- [ ] merge claude-devin develop → main (release-please flow)
+- [ ] decide devin-proxy-py fate: keep as reference / archive
 
-## Renames queued
+## Renames done
 
-None — the `<host>-devin` convention means `opencode-devin` and
-`claude-devin` are already correctly named. Only `devin-core` and
-`devin-engine` are created new.
+- `opencode-devin`, `claude-devin` — unchanged (the `<host>-devin`
+  convention already names them correctly).
+- `devin-core`, `devin-engine` — created new (master branches).
+- `devin-proxy` — now the TypeScript proxy (was the Python repo).
+  Python moved to `devin-proxy-py` (reference, kept green).
+- npm: `devin-proxy` publishes the TS package.
