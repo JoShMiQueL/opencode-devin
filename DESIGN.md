@@ -13,10 +13,24 @@ orchestrates CLIs, not the protocol.
 | `devin-core` | — | free | lib: transport, auth, PKCE, catalog |
 | `devin-engine` | — | free | lib: embeddable jailbreak/pipeline |
 | `devin-proxy` | = | free | product: standalone OpenAI-compat proxy |
-| `devin-opencode` | `opencode-devin` | taken | product: opencode v2 plugin |
-| `devin-claude` | `claude-devin` | free | product: Claude surface / proxy |
+| `opencode-devin` | = | published | product: opencode v2 plugin |
+| `claude-devin` | = | free | product: Claude surface / proxy |
 
 `cascade-core` was taken on npm → family settled on `devin-*`.
+
+### Naming rule: `devin-*` prefix vs `*-devin` suffix
+
+The ecosystem convention (opencode-devin, pi-devin-*, dsh-*-devin, the
+official `@cognitionai/opencode-devin`) is `<host>-devin` = "a Devin
+integration for host X". We follow it:
+
+- **`devin-*` prefix** → pieces of the *stack itself*: the libraries and
+  the standalone proxy (devin-core, devin-engine, devin-proxy)
+- **`*-devin` suffix** → *integrations*: Devin bridged into an external
+  host (opencode-devin, claude-devin, a future vscode-devin...)
+
+Result: the two plugins keep their existing names — zero GitHub renames,
+zero npm deprecations. Only the two libs are new repos.
 
 ## Dependency graph
 
@@ -70,6 +84,6 @@ is stable, and `contract.json` catches upstream changes in CI.
 
 ## Renames queued
 
-`opencode-devin` → `devin-opencode`, `claude-devin` → `devin-claude`.
-GitHub keeps redirects; the npm side needs a fresh publish under the new
-name (old name deprecates).
+None — the `<host>-devin` convention means `opencode-devin` and
+`claude-devin` are already correctly named. Only `devin-core` and
+`devin-engine` are created new.
