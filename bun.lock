@@ -8,7 +8,7 @@
         "@ai-sdk/provider": "3.0.8",
         "@opencode/plugin": "2.4.1",
         "devin-core": "^0.0.7",
-        "devin-engine": "^0.0.9",
+        "devin-engine": "0.0.11",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -306,7 +306,7 @@
 
     "devin-core": ["devin-core@0.0.7", "", {}, "sha512-K6d9FpKcICaipoq5K8ntRnSCT/Va9QhoXPhl49pv7zF6Bgvbpn3jaxbrwIWoGJnhbUlY9gUmR3qcpJeTEiwOrg=="],
 
-    "devin-engine": ["devin-engine@0.0.9", "", { "dependencies": { "devin-core": "^0.0.7" } }, "sha512-9refaTeJIIueTuINoG+4ixBMKXlpn9ZsbuEr5OO75lJRs9uvc+EcDSwXVYMJkds/LMq3S9Gi9ImctzoLWcxh8w=="],
+    "devin-engine": ["devin-engine@0.0.11", "", { "dependencies": { "devin-core": "^0.0.7" } }, "sha512-wI95D03on/W4D7TUXwITQ9dGthtwQSSpkXMc6NtbHIHQ9CCT2E3ZCDPT9zgiHhZlSBsuaCNNZQtbq/l6g6GBXA=="],
 
     "eastasianwidth": ["eastasianwidth@0.2.0", "", {}, "sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA=="],
 
