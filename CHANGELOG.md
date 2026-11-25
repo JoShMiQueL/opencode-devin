@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.7](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.6...v0.2.7) (2026-11-25)
+
+
+### Features
+
+* read pipeline settings from plugin options — the object form of the plugins entry ({package, options}) is the documented configuration path; no fake provider stanza required. provider.devin.options still overrides through the settings merge ([#33](https://github.com/JoShMiQueL/opencode-devin/issues/33)) ([93ec4de](https://github.com/JoShMiQueL/opencode-devin/commit/93ec4de130d870002a56418e1b84c1ee226a2ee4))
+
 ## [0.2.6](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.5...v0.2.6) (2026-11-25)
 
 
