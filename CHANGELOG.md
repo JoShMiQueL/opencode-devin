@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.4](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.3...v0.2.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* release the variants fix with plugin API 2.4.1 ([#27](https://github.com/JoShMiQueL/opencode-devin/issues/27)) ([a7af085](https://github.com/JoShMiQueL/opencode-devin/commit/a7af085188bb14de1e460faf45a83cc3547cbeb9))
+
 ## [0.2.3](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.2...v0.2.3) (2026-11-25)
 
 
