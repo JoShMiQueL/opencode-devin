@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.5](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.4...v0.2.5) (2026-11-25)
+
+
+### Bug Fixes
+
+* **deps:** bump devin-core to 0.0.5 — bare uid no longer steals the sibling's effort, so every family merges into variants (fixes 'No variants available' on swe-2-1 and any model whose bare uid reports a default reasoning effort) ([#29](https://github.com/JoShMiQueL/opencode-devin/issues/29)) ([9aea6ae](https://github.com/JoShMiQueL/opencode-devin/commit/9aea6aea550d0bd8b3224651f2ab0da674c59cf7))
+
 ## [0.2.4](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.3...v0.2.4) (2026-11-25)
 
 
