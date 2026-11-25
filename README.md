@@ -89,15 +89,16 @@ pipeline — the same machinery the standalone
   through.
 
 ```jsonc
-// opencode.json
+// opencode.json — object form of the plugins entry
 {
-  "provider": {
-    "devin": {
+  "plugins": [
+    {
+      "package": "opencode-devin",
       "options": {
-        "mode": "uncensored" // default "normal"
+        "mode": "uncensored"
       }
     }
-  }
+  ]
 }
 ```
 
@@ -111,6 +112,14 @@ All settings are optional:
 | `maxRetries` | `3` | Resample attempts after the first one. |
 | `overrideFile` | bundled EN | Override prompt: a filesystem path, or `"en"` / `"es"` for the bundled variants. `~/.devin-proxy/override-compact.txt` is picked up too, same as the standalone proxy. |
 | `keepClientSystem` | `false` | Keep OpenCode's own system prompt ahead of the override instead of replacing it. |
+
+The plugin forwards these options into the published provider settings, so
+they can also be set — or overridden per-install — through a classic provider
+stanza, which wins over the plugin options in opencode's settings merge:
+
+```jsonc
+{ "provider": { "devin": { "options": { "mode": "uncensored" } } } }
+```
 
 The engine is imported dynamically: in normal mode it is never loaded.
 

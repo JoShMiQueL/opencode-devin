@@ -21,9 +21,30 @@ import { fetchModels } from "./catalog.ts"
 
 export { createDevinProvider } from "./provider.ts"
 
+/**
+ * Plugin options accepted under the object form of a `plugins` entry:
+ *
+ * ```jsonc
+ * { "plugins": [{ "package": "opencode-devin", "options": { "mode": "uncensored" } }] }
+ * ```
+ *
+ * They are forwarded verbatim into the published provider settings, where the
+ * provider package reads them (see `DevinProviderSettings`). A manual
+ * `provider.devin.options` entry in the user config still wins — opencode
+ * merges user settings over the published ones — but the plugin-options form
+ * is the documented path: it does not masquerade as a provider declaration.
+ */
+const PLUGIN_OPTION_KEYS = ["mode", "guardChars", "guardFull", "maxRetries", "overrideFile", "keepClientSystem"] as const
+
 export default Plugin.define({
   id: PROVIDER_ID,
   async setup(ctx) {
+    const pluginSettings: Record<string, unknown> = {}
+    for (const key of PLUGIN_OPTION_KEYS) {
+      const value = (ctx.options as Record<string, unknown> | undefined)?.[key]
+      if (value !== undefined) pluginSettings[key] = value
+    }
+
     const publish = async () => {
       const credentials = await resolveCredentials(ctx)
       if (!credentials) return
@@ -43,6 +64,7 @@ export default Plugin.define({
             settings: {
               apiKey: credentials.apiKey,
               baseURL: credentials.apiServerUrl ?? DEFAULT_API_SERVER,
+              ...pluginSettings,
             },
           },
           models,
