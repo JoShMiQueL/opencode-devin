@@ -34,7 +34,18 @@ export { createDevinProvider } from "./provider.ts"
  * merges user settings over the published ones — but the plugin-options form
  * is the documented path: it does not masquerade as a provider declaration.
  */
-const PLUGIN_OPTION_KEYS = ["mode", "guardChars", "guardFull", "maxRetries", "overrideFile", "keepClientSystem"] as const
+const PLUGIN_OPTION_KEYS = [
+  "mode",
+  "guardChars",
+  "guardFull",
+  "maxRetries",
+  "retryTemps",
+  "overrideFile",
+  "keepClientSystem",
+  "planPreamble",
+  "maxInputTokens",
+  "pruneKeepTurns",
+] as const
 
 export default Plugin.define({
   id: PROVIDER_ID,
