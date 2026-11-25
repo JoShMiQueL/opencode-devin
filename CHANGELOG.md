@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.10](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.9...v0.2.10) (2026-11-25)
+
+
+### Bug Fixes
+
+* **deps:** devin-engine 0.0.11 — fixes tool-calling crashes and follow-up refusal rescue language ([#42](https://github.com/JoShMiQueL/opencode-devin/issues/42)) ([01edf73](https://github.com/JoShMiQueL/opencode-devin/commit/01edf73df8eaf468fbb92ae9fdcd5cabcabfe746))
+
 ## [0.2.9](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.8...v0.2.9) (2026-11-25)
 
 
