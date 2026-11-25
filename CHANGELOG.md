@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.6](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.5...v0.2.6) (2026-11-25)
+
+
+### Features
+
+* uncensored mode via devin-engine pipeline ([#31](https://github.com/JoShMiQueL/opencode-devin/issues/31)) ([23984f5](https://github.com/JoShMiQueL/opencode-devin/commit/23984f5548f407027d9d1c113b205c296fa7b7ab))
+
 ## [0.2.5](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.4...v0.2.5) (2026-11-25)
 
 
