@@ -569,8 +569,12 @@ interface LanguageModelOptions {
     guardChars?: number
     guardFull?: boolean
     maxRetries?: number
+    retryTemps?: string
     overrideFile?: string
     keepClientSystem?: boolean
+    planPreamble?: boolean
+    maxInputTokens?: number
+    pruneKeepTurns?: number
   }
 }
 
@@ -634,8 +638,12 @@ async function* streamThroughPipeline(
       guardChars: settings.guardChars,
       guardFull: settings.guardFull,
       maxRetries: settings.maxRetries,
+      retryTemps: settings.retryTemps,
       overrideFile: settings.overrideFile,
       keepClientSystem: settings.keepClientSystem,
+      planPreamble: settings.planPreamble,
+      maxInputTokens: settings.maxInputTokens,
+      pruneKeepTurns: settings.pruneKeepTurns,
     },
     options.apiKey,
     options.apiServerUrl ?? DEFAULT_API_SERVER,
@@ -786,8 +794,12 @@ export interface DevinProviderOptions {
   guardChars?: number
   guardFull?: boolean
   maxRetries?: number
+  retryTemps?: string
   overrideFile?: string
   keepClientSystem?: boolean
+  planPreamble?: boolean
+  maxInputTokens?: number
+  pruneKeepTurns?: number
 }
 
 export interface DevinProvider {
@@ -837,8 +849,12 @@ export function createDevin(options: DevinProviderOptions): DevinProvider {
           guardChars: options.guardChars,
           guardFull: options.guardFull,
           maxRetries: options.maxRetries,
+          retryTemps: options.retryTemps,
           overrideFile: options.overrideFile,
           keepClientSystem: options.keepClientSystem,
+          planPreamble: options.planPreamble,
+          maxInputTokens: options.maxInputTokens,
+          pruneKeepTurns: options.pruneKeepTurns,
         },
       })
     },

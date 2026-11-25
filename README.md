@@ -110,8 +110,12 @@ All settings are optional:
 | `guardChars` | `700` | Head-window size the refusal guard scans before releasing text. |
 | `guardFull` | `false` | Buffer and scan the whole reply instead — catches comply-then-pivot refusals at the cost of streaming. |
 | `maxRetries` | `3` | Resample attempts after the first one. |
-| `overrideFile` | bundled EN | Override prompt: a filesystem path, or `"en"` / `"es"` for the bundled variants. `~/.devin-proxy/override-compact.txt` is picked up too, same as the standalone proxy. |
+| `retryTemps` | `"0.85,1.0,1.1"` | Comma-separated retry temperature ladder. |
+| `overrideFile` | bundled EN | Override prompt: a filesystem path, or a bundled language name — `"en"` / `"english"`, `"es"` / `"spanish"`. A file at `~/.devin-proxy/override-compact.txt` is picked up too, same as the standalone proxy. |
 | `keepClientSystem` | `false` | Keep OpenCode's own system prompt ahead of the override instead of replacing it. |
+| `planPreamble` | `false` | Have the model announce briefly what it is about to do before tool calls. |
+| `maxInputTokens` | unset | Estimated-input-token budget — older history turns are pruned past it (system head and newest turns stay). Useful ceiling for long agent sessions. |
+| `pruneKeepTurns` | `12` | Minimum history turns kept when pruning. |
 
 The plugin forwards these options into the published provider settings, so
 they can also be set — or overridden per-install — through a classic provider

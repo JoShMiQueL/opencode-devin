@@ -28,10 +28,18 @@ export interface DevinProviderSettings {
   readonly guardFull?: boolean
   /** Resample attempts after the first one (devin-engine default: 3). */
   readonly maxRetries?: number
+  /** Retry temperatures after the first attempt, comma-separated (default "0.85,1.0,1.1"). */
+  readonly retryTemps?: string
   /** Override prompt file: a path, or "en" / "es" for the bundled variants. */
   readonly overrideFile?: string
   /** Keep the client system prompt ahead of the override. */
   readonly keepClientSystem?: boolean
+  /** Tell the model to announce briefly what it is about to do before tool calls. */
+  readonly planPreamble?: boolean
+  /** Estimated-input-token budget: older history turns are pruned past it. */
+  readonly maxInputTokens?: number
+  /** Minimum history turns kept when pruning (default 12). */
+  readonly pruneKeepTurns?: number
 }
 
 export function createDevinProvider(options: DevinProviderSettings) {
@@ -42,8 +50,12 @@ export function createDevinProvider(options: DevinProviderSettings) {
     guardChars: options.guardChars,
     guardFull: options.guardFull,
     maxRetries: options.maxRetries,
+    retryTemps: options.retryTemps,
     overrideFile: options.overrideFile,
     keepClientSystem: options.keepClientSystem,
+    planPreamble: options.planPreamble,
+    maxInputTokens: options.maxInputTokens,
+    pruneKeepTurns: options.pruneKeepTurns,
   })
   return {
     languageModel: (modelID: string) => provider.languageModel(modelID),
