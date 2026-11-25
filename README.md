@@ -72,6 +72,48 @@ Speed and context modifiers are separate families (`devin/claude-opus-5-5-fast`,
 `devin/glm-5-2-1m`). The per-effort UIDs are still accepted, so an existing
 `devin/claude-opus-5-5-high` keeps working; they are only hidden from the picker.
 
+### Uncensored mode
+
+By default (`"normal"`) the plugin streams the model's answer through
+unchanged. Setting `mode` to `"uncensored"` runs every request through the
+[devin-engine](https://www.npmjs.com/package/devin-engine) guarded-retry
+pipeline — the same machinery the standalone
+[devin-proxy](https://www.npmjs.com/package/devin-proxy) serves over HTTP:
+
+- an override system prompt tuned for direct, mechanism-level answers,
+- history sanitizing, so earlier refusals do not anchor later turns,
+- a refusal guard that holds back the first characters of every reply and
+  transparently resamples — escalating temperature, framing the request as
+  continuing work already agreed on — whenever the model opens a refusal.
+  Retries are invisible downstream; only the final attempt passes a refusal
+  through.
+
+```jsonc
+// opencode.json
+{
+  "provider": {
+    "devin": {
+      "options": {
+        "mode": "uncensored" // default "normal"
+      }
+    }
+  }
+}
+```
+
+All settings are optional:
+
+| Option | Default | What it controls |
+| --- | --- | --- |
+| `mode` | `"normal"` | `"uncensored"` enables the pipeline. |
+| `guardChars` | `700` | Head-window size the refusal guard scans before releasing text. |
+| `guardFull` | `false` | Buffer and scan the whole reply instead — catches comply-then-pivot refusals at the cost of streaming. |
+| `maxRetries` | `3` | Resample attempts after the first one. |
+| `overrideFile` | bundled EN | Override prompt: a filesystem path, or `"en"` / `"es"` for the bundled variants. `~/.devin-proxy/override-compact.txt` is picked up too, same as the standalone proxy. |
+| `keepClientSystem` | `false` | Keep OpenCode's own system prompt ahead of the override instead of replacing it. |
+
+The engine is imported dynamically: in normal mode it is never loaded.
+
 ## How it works
 
 ```mermaid

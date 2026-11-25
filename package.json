@@ -47,7 +47,8 @@
  "dependencies": {
   "@ai-sdk/provider": "3.0.8",
   "@opencode/plugin": "2.4.1",
-  "devin-core": "^0.0.5"
+  "devin-core": "^0.0.5",
+  "devin-engine": "^0.0.5"
  },
  "devDependencies": {
   "@types/bun": "1.4.4",

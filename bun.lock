@@ -8,6 +8,7 @@
         "@ai-sdk/provider": "3.0.8",
         "@opencode/plugin": "2.4.1",
         "devin-core": "^0.0.5",
+        "devin-engine": "^0.0.5",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -304,6 +305,8 @@
     "define-lazy-prop": ["define-lazy-prop@3.0.0", "", {}, "sha512-N+MeXYoqr3pOgn8xfyRPREN7gHakLYjhsHhWGT3fWAiL4IkAt0iDw14QiiEm2bE30c5XX5q0FtAA3CK5f9/BUg=="],
 
     "devin-core": ["devin-core@0.0.5", "", {}, "sha512-AZgTtruGbMRBikyaFtrWEe82Kgi9yGzSPwL9G25hyy9L+Ipp+lZ4KElOTSjiwOgrCJ8wQ39beVYEtZ5+TCHNjg=="],
+
+    "devin-engine": ["devin-engine@0.0.5", "", { "dependencies": { "devin-core": "^0.0.5" } }, "sha512-N/j4xs2pi8QVjH8JicQvp+pE5kRkEakvm6Y7HdOMzwnHsmm4dRKV2l30iLOEqj0i1VEEpghPIHD+UXje5VGJng=="],
 
     "eastasianwidth": ["eastasianwidth@0.2.0", "", {}, "sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA=="],
 
