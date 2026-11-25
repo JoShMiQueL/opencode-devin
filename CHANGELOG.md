@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.3](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.2...v0.2.3) (2026-11-25)
+
+
+### Bug Fixes
+
+* **catalog:** merge bare+effortful families into one model — the bare uid is the default variant, not a merge blocker. Fixes every devin/* model appearing once per effort in the picker. ([#24](https://github.com/JoShMiQueL/opencode-devin/issues/24)) ([c1d8035](https://github.com/JoShMiQueL/opencode-devin/commit/c1d8035152a1265aa58079bdf49a768764a7a4bc))
+
 ## [0.2.2](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.1...v0.2.2) (2026-11-15)
 
 
