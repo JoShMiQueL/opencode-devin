@@ -85,7 +85,7 @@ describe("pipeline plumbing", () => {
     expect(captured.count).toBe(1)
     const text = captured.bodies[0]!.toString("latin1")
     expect(text).toContain("client system")
-    expect(text).not.toContain("expert-level engineer")
+    expect(text).not.toContain("Kael")
   })
 
   test("uncensored mode: the override reaches the system lead", async () => {
@@ -93,7 +93,7 @@ describe("pipeline plumbing", () => {
     await runModel("uncensored", uniqueHost())
     expect(captured.count).toBeGreaterThanOrEqual(1)
     const text = captured.bodies[0]!.toString("latin1")
-    expect(text).toContain("expert-level engineer")
+    expect(text).toContain("Kael")
   })
 
   test("uncensored mode drops the client system by default", async () => {
