@@ -39,11 +39,23 @@ export function toModelInfos(entries: readonly ModelCatalogEntry[]): Model.Info[
   }
   const models: Model.Info[] = []
   for (const [baseModelUid, family] of families) {
-    const efforts = new Set(family.map((entry) => toEffortLevel(entry.effortLevel)))
-    // Only a family whose members are told apart by effort alone is merged.
-    // Anything else keeps one model per UID, so no UID becomes unreachable.
-    if (family.length > 1 && efforts.size === family.length && !efforts.has(undefined)) {
-      models.push(toModelInfo(defaultMember(family)!, baseModelUid, family))
+    // Members carrying a resolvable effort (suffix or capability) are the
+    // variant candidates; members without one are bare uids. A bare uid whose
+    // modelUid equals the family key is the family's default member — the
+    // model the picker shows. Any other bare uid is a distinct model (e.g.
+    // `-fast` speed variants sit in their own family key, so this is rare).
+    const effortful = family.filter((entry) => toEffortLevel(entry.effortLevel) !== undefined)
+    const distinctEfforts = new Set(effortful.map((entry) => toEffortLevel(entry.effortLevel)))
+
+    // Merge when every effortful member maps to a distinct effort. The old
+    // rule also required zero bare members — but the bare uid IS the default
+    // variant, so a family of bare+effortful must merge too, not explode into
+    // one model per uid. Only a family with more than one unresolvable bare
+    // member (ambiguous default) falls back to one-model-per-uid.
+    const bareCount = family.length - effortful.length
+    if (effortful.length > 0 && distinctEfforts.size === effortful.length && bareCount <= 1) {
+      const primary = defaultMember(family)!
+      models.push(toModelInfo(primary, baseModelUid, effortful))
       for (const entry of family) {
         if (entry.modelUid !== baseModelUid) models.push(toModelInfo(entry, entry.modelUid, [], "deprecated"))
       }
