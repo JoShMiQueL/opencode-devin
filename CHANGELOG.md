@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.9](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.8...v0.2.9) (2026-11-25)
+
+
+### Features
+
+* devin-engine ^0.0.9 + devin-core ^0.0.7 — persona-based override (Kael) with measured full compliance on swe-2/2.1, widened ES refusal detection, natural agreed-plan retry injection active with tools ([#37](https://github.com/JoShMiQueL/opencode-devin/issues/37)) ([e0ed93d](https://github.com/JoShMiQueL/opencode-devin/commit/e0ed93d3ba52a1f7ad7ae49662a2263d1d6a59cb))
+
 ## [0.2.8](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.7...v0.2.8) (2026-11-25)
 
 
