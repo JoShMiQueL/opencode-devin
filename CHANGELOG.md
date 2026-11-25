@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.8](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.7...v0.2.8) (2026-11-25)
+
+
+### Features
+
+* expose retryTemps, planPreamble, maxInputTokens, pruneKeepTurns through the pipeline settings — plugin options, provider settings and docs; devin-engine ^0.0.6 ([#35](https://github.com/JoShMiQueL/opencode-devin/issues/35)) ([7419819](https://github.com/JoShMiQueL/opencode-devin/commit/741981962202307244ca07d6926ffb7697fd1759))
+
 ## [0.2.7](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.6...v0.2.7) (2026-11-25)
 
 
