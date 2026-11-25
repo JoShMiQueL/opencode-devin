@@ -1,57 +1,57 @@
 {
-  "$schema": "https://json.schemastore.org/package.json",
-  "name": "opencode-devin",
-  "version": "0.2.3",
-  "description": "OpenCode v2 plugin: connect your Devin subscription to opencode with native /connect login and devin/* models",
-  "type": "module",
-  "main": "./dist/index.js",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./provider": {
-      "types": "./dist/provider.d.ts",
-      "default": "./dist/provider.js"
-    }
+ "$schema": "https://json.schemastore.org/package.json",
+ "name": "opencode-devin",
+ "version": "0.2.3",
+ "description": "OpenCode v2 plugin: connect your Devin subscription to opencode with native /connect login and devin/* models",
+ "type": "module",
+ "main": "./dist/index.js",
+ "exports": {
+  ".": {
+   "types": "./dist/index.d.ts",
+   "default": "./dist/index.js"
   },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "node scripts/build.mjs",
-    "build:clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
-    "test": "bun test",
-    "prepublishOnly": "npm run build:clean"
-  },
-  "keywords": [
-    "opencode",
-    "opencode-plugin",
-    "opencode-v2",
-    "devin",
-    "cognition",
-    "windsurf"
-  ],
-  "license": "MIT",
-  "author": {
-    "name": "JoShMiQueL",
-    "email": "joshmiquel.cs@gmail.com"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/JoShMiQueL/opencode-devin.git"
-  },
-  "homepage": "https://github.com/JoShMiQueL/opencode-devin#readme",
-  "bugs": "https://github.com/JoShMiQueL/opencode-devin/issues",
-  "dependencies": {
-    "@ai-sdk/provider": "3.0.8",
-    "@opencode/plugin": "2.0.16",
-    "devin-core": "^0.0.3"
-  },
-  "devDependencies": {
-    "@types/bun": "1.4.4",
-    "protobufjs": "8.8.1",
-    "typescript": "7.0.2"
+  "./provider": {
+   "types": "./dist/provider.d.ts",
+   "default": "./dist/provider.js"
   }
+ },
+ "files": [
+  "dist"
+ ],
+ "scripts": {
+  "build": "node scripts/build.mjs",
+  "build:clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc",
+  "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+  "test": "bun test",
+  "prepublishOnly": "npm run build:clean"
+ },
+ "keywords": [
+  "opencode",
+  "opencode-plugin",
+  "opencode-v2",
+  "devin",
+  "cognition",
+  "windsurf"
+ ],
+ "license": "MIT",
+ "author": {
+  "name": "JoShMiQueL",
+  "email": "joshmiquel.cs@gmail.com"
+ },
+ "repository": {
+  "type": "git",
+  "url": "git+https://github.com/JoShMiQueL/opencode-devin.git"
+ },
+ "homepage": "https://github.com/JoShMiQueL/opencode-devin#readme",
+ "bugs": "https://github.com/JoShMiQueL/opencode-devin/issues",
+ "dependencies": {
+  "@ai-sdk/provider": "3.0.8",
+  "@opencode/plugin": "2.4.1",
+  "devin-core": "^0.0.3"
+ },
+ "devDependencies": {
+  "@types/bun": "1.4.4",
+  "protobufjs": "8.8.1",
+  "typescript": "7.0.2"
+ }
 }
