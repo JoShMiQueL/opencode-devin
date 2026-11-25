@@ -563,6 +563,15 @@ interface LanguageModelOptions {
    * variant", so the UID cannot be resolved without it.
    */
   loadCatalog: () => Promise<CatalogSnapshot | undefined>
+  /** Guarded-retry pipeline settings, mirrored from the provider settings. */
+  pipeline?: {
+    mode?: "normal" | "uncensored"
+    guardChars?: number
+    guardFull?: boolean
+    maxRetries?: number
+    overrideFile?: string
+    keepClientSystem?: boolean
+  }
 }
 
 /**
@@ -597,6 +606,53 @@ function isKnownToCatalog(modelId: string, catalog: CatalogSnapshot | undefined)
 }
 
 /**
+ * Stream one request through the devin-engine guarded-retry pipeline.
+ *
+ * The import is dynamic on purpose: the engine is the compliance layer (the
+ * jailbreak), and a user in normal mode should neither load nor execute it —
+ * same reason devin-core and devin-engine are separate packages in the first
+ * place.
+ */
+async function* streamThroughPipeline(
+  options: LanguageModelOptions,
+  wire: {
+    modelUid: string
+    messages: ChatHistoryItem[]
+    tools: ChatToolDefinition[] | undefined
+    toolChoice: ChatToolChoice | undefined
+    maxOutputTokens?: number
+    temperature?: number
+    topP?: number
+    signal?: AbortSignal
+  },
+): AsyncGenerator<ChatEvent> {
+  const { CascadePipeline } = await import("devin-engine")
+  const settings = options.pipeline ?? {}
+  const pipeline = new CascadePipeline(
+    {
+      mode: settings.mode ?? "normal",
+      guardChars: settings.guardChars,
+      guardFull: settings.guardFull,
+      maxRetries: settings.maxRetries,
+      overrideFile: settings.overrideFile,
+      keepClientSystem: settings.keepClientSystem,
+    },
+    options.apiKey,
+    options.apiServerUrl ?? DEFAULT_API_SERVER,
+  )
+  yield* pipeline.stream({
+    modelUid: wire.modelUid,
+    messages: wire.messages,
+    tools: wire.tools,
+    toolChoice: wire.toolChoice,
+    maxOutputTokens: wire.maxOutputTokens,
+    temperature: wire.temperature,
+    topP: wire.topP,
+    signal: wire.signal,
+  })
+}
+
+/**
  * Add the likely cause to a failure for a model the catalog never listed.
  *
  * Refusing such a model up front would be wrong: the catalog is not a contract
@@ -621,25 +677,40 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
     // Checked on the UID that is sent: a family id is not a UID of its own.
     checkModelUsable(resolvedModelId, catalog)
     const { messages, warnings } = convertPrompt(callOptions.prompt)
+    const wire = {
+      modelUid: resolvedModelId,
+      messages,
+      tools: convertTools(callOptions.tools),
+      toolChoice: callOptions.toolChoice as ChatToolChoice | undefined,
+      maxOutputTokens: callOptions.maxOutputTokens,
+      temperature: callOptions.temperature,
+      topP: callOptions.topP,
+      signal,
+    }
+    const pipelineMode = options.pipeline?.mode ?? "normal"
+    const events =
+      pipelineMode === "uncensored"
+        ? streamThroughPipeline(options, wire)
+        : streamChatEvents({
+            apiKey: options.apiKey,
+            apiServerUrl: options.apiServerUrl,
+            modelUid: wire.modelUid,
+            messages: wire.messages,
+            tools: wire.tools,
+            toolChoice: wire.toolChoice,
+            completionOpts: {
+              maxOutputTokens: wire.maxOutputTokens,
+              temperature: wire.temperature,
+              topP: wire.topP,
+              topK: callOptions.topK,
+            },
+            signal,
+          })
     return {
       resolvedModelId,
       warnings,
       knownToCatalog: isKnownToCatalog(resolvedModelId, catalog),
-      events: streamChatEvents({
-        apiKey: options.apiKey,
-        apiServerUrl: options.apiServerUrl,
-        modelUid: resolvedModelId,
-        messages,
-        tools: convertTools(callOptions.tools),
-        toolChoice: callOptions.toolChoice as ChatToolChoice | undefined,
-        completionOpts: {
-          maxOutputTokens: callOptions.maxOutputTokens,
-          temperature: callOptions.temperature,
-          topP: callOptions.topP,
-          topK: callOptions.topK,
-        },
-        signal,
-      }),
+      events,
     }
   }
 
@@ -710,6 +781,13 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
 export interface DevinProviderOptions {
   apiKey: string
   baseURL?: string
+  /** Pipeline mode — see DevinProviderSettings in ../provider.ts. */
+  mode?: "normal" | "uncensored"
+  guardChars?: number
+  guardFull?: boolean
+  maxRetries?: number
+  overrideFile?: string
+  keepClientSystem?: boolean
 }
 
 export interface DevinProvider {
@@ -754,6 +832,14 @@ export function createDevin(options: DevinProviderOptions): DevinProvider {
         apiKey,
         apiServerUrl: options.baseURL,
         loadCatalog,
+        pipeline: {
+          mode: options.mode,
+          guardChars: options.guardChars,
+          guardFull: options.guardFull,
+          maxRetries: options.maxRetries,
+          overrideFile: options.overrideFile,
+          keepClientSystem: options.keepClientSystem,
+        },
       })
     },
   }
