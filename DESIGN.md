@@ -100,3 +100,39 @@ is stable, and `contract.json` catches upstream changes in CI.
 - `devin-proxy` — now the TypeScript proxy (was the Python repo).
   Python moved to `devin-proxy-py` (reference, kept green).
 - npm: `devin-proxy` publishes the TS package.
+
+## CI / release standard (all repos)
+
+Same 4 workflows in every package (opencode-devin is the reference):
+
+| Workflow | Trigger | Job |
+| --- | --- | --- |
+| `ci.yml` | push main/master + PRs | typecheck → build → test on ubuntu/windows/macos |
+| `release-please.yml` | push main/master | opens/updates the release PR, tags + GH Release on merge |
+| `pr-title.yml` | PR opened/edited | enforces Conventional Commits on the squash title |
+| `publish.yml` | `v*` tag / `release: published` / dispatch | verify tag==pkg.version → test → OIDC `npm publish --provenance`, skips if already on npm |
+
+`devin-proxy-py` and `claude-devin` keep their own flows (Python release,
+GitFlow develop→main). Dependabot only where the lockfile is supported —
+bun.lock isn't, so npm ecosystems were dropped.
+
+## How work flows (all active repos)
+
+- **`main` is the only long-lived branch** (claude-devin keeps GitFlow:
+  `develop` → `main`). `main` is protected everywhere: no direct push, no
+  force-push, required checks must pass.
+- **Everything lands via PR.** Branch off `main`, open the PR with a
+  conventional-commits title, squash-merge on green.
+- **release-please cuts releases.** Merging its release PR tags `vX.Y.Z`,
+  creates the GitHub Release, and triggers `npm-publish` (OIDC, provenance).
+- **Shared CI** lives in `JoShMiQueL/gh-actions` — each repo has one
+  `main.yml` caller. Changes to CI go there once.
+
+### Branch-protection baseline
+
+| Repo | main | develop |
+| --- | --- | --- |
+| devin-core / devin-engine / devin-proxy | required: ci verify+test×3, pr-title, release-please | — |
+| opencode-devin | same set | — |
+| claude-devin | verify, test×2, branch-gate | verify, test×2 |
+| gh-actions | no direct push (no CI of its own) | — |
