@@ -7,9 +7,11 @@ OpenCode v2 provider plugin for the Devin/Cognition backend. Thin adapter: the h
 - **Everything in English.** Commit messages, PR titles/bodies, code comments, docs, reviews — always English. Code and identifiers too.
 - Conventional commits: `feat|fix|docs|ci|chore|test|refactor|perf`.
 
+- **Model routing**: the orchestrator and the big lanes are used as little as possible — everything delegable goes to workers/subagents on cheap lanes. Don't recommend swe-2-1-flash for workers (standing rule); the bare swe-2-1 lane hits the free-tier rate limit under real workloads — upstream closes the stream empty, the pipeline burns all retries in <1s, and the user sees an instant cut. When that happens, check for `Reached free model rate limit` upstream before debugging the pipeline.
 ## Hard rules
 
 - **Plugin options are the configuration path**: `{"plugins": [{"package": "opencode-devin", "options": {"mode": "uncensored"}}]}` — `ctx.options` forwards into published provider settings. A manual `provider.devin.options` stanza in opencode.json still overrides; that precedence is documented behavior.
+- **Delegation rule**: the orchestrator and the big lanes are used as little as possible — everything delegable goes to workers/subagents on cheap lanes. swe-2-1 bare hits the free-tier rate limit under real workloads (upstream returns an empty stream, the pipeline classifies "empty", and all retries burn in under a second — reads to the user as an instant cut). If swe-2-1 replies die instantly, check for the upstream `Reached free model rate limit` error before assuming a pipeline bug.
 - **`devin/` exposes ALL models in the subscription catalog**, one per family with effort as variants — never hardcode tier lists here. Don't use swe-2-1-flash for workers/subagents in recommendations.
 - The opencode plugin cache (`~/.cache/opencode/npm/opencode-devin@latest/`) pins whatever was latest when first downloaded — when testing unreleased engine changes, hot-patch `dist/` into the cache's nested `node_modules/devin-engine/` and check the nested `devin-core` version too (the stale-nested trap).
 - Field numbers in protocol files are reverse-engineered — comments citing evidence are load-bearing.
