@@ -8,6 +8,11 @@ OpenCode v2 provider plugin for the Devin/Cognition backend. Thin adapter: the h
 - Conventional commits: `feat|fix|docs|ci|chore|test|refactor|perf`.
 
 - **Model routing**: the orchestrator and the big lanes are used as little as possible — everything delegable goes to workers/subagents on cheap lanes. Don't recommend swe-2-1-flash for workers (standing rule); the bare swe-2-1 lane hits the free-tier rate limit under real workloads — upstream closes the stream empty, the pipeline burns all retries in <1s, and the user sees an instant cut. When that happens, check for `Reached free model rate limit` upstream before debugging the pipeline.
+## Model routing
+
+- **Delegate everything delegable — the orchestrator and the big lanes are used as little as possible.** Workers and subagents go to cheap/small lanes; the swe-2-1 bare lane hits the free-tier rate limit under real workloads (upstream closes the stream empty in <1s — instant cut for the user, resets in minutes, not a bug). `swe-2-1-flash` stays off the worker/subagent lane per the standing rule.
+- Recommend `swe-2-1-high`/`xhigh` or `swe-2-max` for direct user prompts; higher effort streams more granularly AND measures better uncensored compliance.
+
 ## Hard rules
 
 - **Plugin options are the configuration path**: `{"plugins": [{"package": "opencode-devin", "options": {"mode": "uncensored"}}]}` — `ctx.options` forwards into published provider settings. A manual `provider.devin.options` stanza in opencode.json still overrides; that precedence is documented behavior.
