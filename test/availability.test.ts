@@ -136,20 +136,13 @@ describe("unlisted model diagnostics", () => {
     try {
       const provider = createDevin({ apiKey: API_KEY, baseURL: host() })
       const { stream } = await provider.languageModel("unlisted-model").doStream(callOptions)
-      // The stream opens with stream-start; the failure surfaces on a later read.
-      const reader = stream.getReader()
-      const error = await (async () => {
-        for (;;) {
-          try {
-            const { done } = await reader.read()
-            if (done) return null
-          } catch (e) {
-            return e as Error
-          }
-        }
-      })()
+      // The stream opens with stream-start; the failure arrives as an error part, then a finish.
+      const parts: Array<{ type: string; error?: Error; finishReason?: { unified: string } }> = []
+      for await (const part of stream) parts.push(part as (typeof parts)[number])
+      const error = parts.find((p) => p.type === "error")?.error
       expect(error).toBeInstanceOf(Error)
       expect(error!.message).toContain("not listed in your Cognition catalog")
+      expect(parts.at(-1)!.finishReason!.unified).toBe("error")
     } finally {
       warn.restore()
     }
