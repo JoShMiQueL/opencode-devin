@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. It is
 generated automatically by [release-please](https://github.com/googleapis/release-please)
 from [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.2.11](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.10...v0.2.11) (2026-11-26)
+
+
+### Bug Fixes
+
+* report stream failures as error parts, not dropped exceptions ([#44](https://github.com/JoShMiQueL/opencode-devin/issues/44)) ([f8a40fb](https://github.com/JoShMiQueL/opencode-devin/commit/f8a40fbf9bc5cd355ea439c1b50dcf92105f01c5))
+
 ## [0.2.10](https://github.com/JoShMiQueL/opencode-devin/compare/v0.2.9...v0.2.10) (2026-11-25)
 
 
