@@ -769,7 +769,10 @@ function createLanguageModel(options: LanguageModelOptions): LanguageModelV3 {
             }
             if (!cancelled) controller.close()
           } catch (cause) {
-            if (!cancelled) controller.error(hintUnlistedModel(cause, modelId, knownToCatalog))
+            if (cancelled) return
+            controller.enqueue({ type: "error", error: hintUnlistedModel(cause, modelId, knownToCatalog) })
+            controller.enqueue({ type: "finish", finishReason: { unified: "error", raw: "error" }, usage: DEFAULT_USAGE })
+            controller.close()
           }
         },
         async cancel() {
