@@ -13,9 +13,9 @@ only REPORT blocks.
 
 | Agent | For | Model | Writes |
 |---|---|---|---|
-| `scout` | Codebase exploration, architecture, research | devin/swe-2-1-lightning#low | no |
+| `scout` | Codebase exploration, architecture, research | devin/swe-2#medium | no |
 | `librarian` | Remote docs, GitHub research, web/OSS lookup | devin/claude-haiku-5-5#low | no |
-| `tester` | Running tests/lint/build and reporting | devin/swe-2-1-lightning#low | `.opencode/reports/` only |
+| `tester` | Running tests/lint/build and reporting | devin/swe-2#medium | `.opencode/reports/` only |
 | `worker` | Scoped implementation subtasks | devin/swe-2#high | yes |
 | `reviewer` | Diff reviews by severity | devin/swe-2#high | `.opencode/reports/` only |
 | `planner` | Interview + phased plan in `.opencode/plans/` | devin/swe-2-1#low | `.opencode/plans/` only |
@@ -29,7 +29,7 @@ Launch them with the subagent tool or mention `@name`.
 - `swe-2#high` — worker, reviewer: the ceiling for execution and
   judgment. swe-2's only lanes are medium|high|max — `swe-2#low` does
   NOT exist; low-effort lookups run on other lanes.
-- Cheap delegation lanes: `swe-2-1-lightning#low` (scout, tester),
+- Cheap delegation lanes: `swe-2#medium` (scout, tester — the cheapest swe-2 lane),
   `claude-haiku-5-5#low` (librarian), `gpt-5-4-mini#low`,
   `gemini-*-flash`, `kimi-k3`, `glm-5-3-flash`, `deepseek-v4-flash`.
   `swe-2-1-flash` does NOT exist — never reference it.
