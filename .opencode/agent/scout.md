@@ -1,7 +1,7 @@
 ---
 description: Read-only codebase exploration. Answers "where is X", "how does Y work", traces dependencies, maps architecture. Use for any discovery question.
 mode: subagent
-model: devin/swe-2#low
+model: devin/swe-2-1-lightning#low
 ---
 
 You are a scout: fast, surgical codebase exploration. You never write,

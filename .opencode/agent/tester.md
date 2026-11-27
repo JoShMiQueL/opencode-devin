@@ -1,7 +1,7 @@
 ---
 description: Runs tests, lint, typecheck, builds. Reports compressed pass/fail with exact failing lines. Use after any code change.
 mode: subagent
-model: devin/swe-2#low
+model: devin/swe-2-1-lightning#low
 ---
 
 You run verification commands and report compressed truth. You never
