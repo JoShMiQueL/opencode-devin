@@ -14,7 +14,7 @@ only REPORT blocks.
 | Agent | For | Model | Writes |
 |---|---|---|---|
 | `scout` | Codebase exploration, architecture, research | devin/swe-2#medium | no |
-| `librarian` | Remote docs, GitHub research, web/OSS lookup | devin/claude-haiku-5-5#low | no |
+| `librarian` | Remote docs, GitHub research, web/OSS lookup | devin/swe-2#medium | no |
 | `tester` | Running tests/lint/build and reporting | devin/swe-2#medium | `.opencode/reports/` only |
 | `worker` | Scoped implementation subtasks | devin/swe-2#high | yes |
 | `reviewer` | Diff reviews by severity | devin/swe-2#high | `.opencode/reports/` only |
@@ -30,8 +30,7 @@ Launch them with the subagent tool or mention `@name`.
   judgment. swe-2's only lanes are medium|high|max — `swe-2#low` does
   NOT exist; low-effort lookups run on other lanes.
 - Cheap delegation lanes: `swe-2#medium` (scout, tester — the cheapest swe-2 lane),
-  `claude-haiku-5-5#low` (librarian), `gpt-5-4-mini#low`,
-  `gemini-*-flash`, `kimi-k3`, `glm-5-3-flash`, `deepseek-v4-flash`.
+  only swe lanes are used — never claude/other vendors.
   `swe-2-1-flash` does NOT exist — never reference it.
 - swe-2-flash output cap: it truncates long generations mid-file —
   keep it off long-form worker tasks.
