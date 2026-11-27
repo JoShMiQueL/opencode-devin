@@ -1,0 +1,6 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "orchestrator",
+  "model": "devin/swe-2#medium",
+  "small_model": "devin/swe-2#low"
+}

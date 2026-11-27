@@ -1,0 +1,16 @@
+{
+  "version": "1.3.0",
+  "installedAt": "2026-11-26T19:26:16.922Z",
+  "files": {
+    "agent/librarian.md": "a6302dc35713c708f185cf3a79aa18e942d8d5eadeee67f3facee7f85b839c52",
+    "agent/orchestrator.md": "b5519d45b295e15ce8aba586dd1b056847a65cfa36873feeba796c3cecb16daa",
+    "agent/planner.md": "2221a468fe4a468de1c24cff40f8cfcdfe35a2e67ba0561e556c0b78b51df2e1",
+    "agent/reviewer.md": "2dee5507b2b082eb73d1e75b203c115c261aa6594b661b802364cfa1f3a07ada",
+    "agent/scout.md": "8cc2bde4838502199ed1dac2a6324abf8568b14fdbefdee94bd90e70032c0b78",
+    "agent/tester.md": "8ffd05a4dfb1bba18e33f88c116aa6eb26b9120e9c8aa9578776d0a8329552ea",
+    "agent/worker.md": "8907691418235239888f58c50c248589d70c0e995860d4138a6d492367ea91d8",
+    "command/implement.md": "db8f5b2be186c487a29c6f9a25c68c1ff0f62d0433b4d66496802d18971e8406",
+    "command/plan-work.md": "1f856537cacd2420fa55d032c18bb678092a72cef84d89e373458cea9eacd574",
+    "command/research.md": "8a1e5884b35834d81249281444287c4f69d0fcb9987c5791f0a8e26a6463446b"
+  }
+}
