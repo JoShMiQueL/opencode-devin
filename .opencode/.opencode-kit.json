@@ -1,13 +1,13 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "installedAt": "2026-11-26T19:26:16.922Z",
   "files": {
-    "agent/librarian.md": "a6302dc35713c708f185cf3a79aa18e942d8d5eadeee67f3facee7f85b839c52",
-    "agent/orchestrator.md": "b5519d45b295e15ce8aba586dd1b056847a65cfa36873feeba796c3cecb16daa",
+    "agent/librarian.md": "33a16397f50f00e3b2f884d6eaedf0cb7265ed1a61ba1ebf23aa133c773e9331",
+    "agent/orchestrator.md": "f517a95ed1f02734a586805fc3fc82c2b7569556ba28d603bccda5ed26324a64",
     "agent/planner.md": "2221a468fe4a468de1c24cff40f8cfcdfe35a2e67ba0561e556c0b78b51df2e1",
     "agent/reviewer.md": "2dee5507b2b082eb73d1e75b203c115c261aa6594b661b802364cfa1f3a07ada",
-    "agent/scout.md": "8cc2bde4838502199ed1dac2a6324abf8568b14fdbefdee94bd90e70032c0b78",
-    "agent/tester.md": "8ffd05a4dfb1bba18e33f88c116aa6eb26b9120e9c8aa9578776d0a8329552ea",
+    "agent/scout.md": "944f0b3c98969892cd9941e4da80a1c5104abc1b63974c30b7edcbd3980c576c",
+    "agent/tester.md": "d882697a24ef29129b7697d3cee7150f85caf010565bbb74ae15a9c824e01fd5",
     "agent/worker.md": "8907691418235239888f58c50c248589d70c0e995860d4138a6d492367ea91d8",
     "command/implement.md": "db8f5b2be186c487a29c6f9a25c68c1ff0f62d0433b4d66496802d18971e8406",
     "command/plan-work.md": "1f856537cacd2420fa55d032c18bb678092a72cef84d89e373458cea9eacd574",
